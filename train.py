@@ -99,7 +99,6 @@ def main(args_opt):
 
 # ------------yolov3 train -----------------------------
 cfg = edict({
-    "is_modelArts": False,
     "distribute": False,
     "device_id": 0,
     "device_num": 1,
@@ -142,8 +141,11 @@ if __name__ == '__main__':
     data_path = './dataset/'
     label_path = './labels.csv'
     metadata_path = './metadata.csv'
-    if cfg.is_modelArts is True:
+    if os.getenv('ISMODELARTS', False) is not False:
         import moxing as mox
+        cfg.data_url = 'obs://msc21-dataset2/dataset/'
+        cfg.label_url = 'obs://msc21-dataset2/dataset/labels.csv'
+        cfg.metadata_url = 'obs://msc21-dataset2/dataset/metadata.csv'
         if not os.path.exists(data_path):
             mox.file.copy_parallel(src_url=cfg.data_url, dst_url=data_path)
         if not os.path.exists(label_path):
