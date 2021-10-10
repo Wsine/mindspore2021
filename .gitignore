@@ -1,3 +1,5 @@
 vendor
 dataset_1
 download
+**/__pycache__
+**/ckpt

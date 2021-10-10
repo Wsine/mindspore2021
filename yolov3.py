@@ -596,11 +596,6 @@ class yolov3_resnet18(nn.Cell):
         self.detect_3 = DetectionBlock('s', self.config)
 
     def construct(self, x):
-        print('-' * 50)
-        print(type(x))
-        print(len(x))
-        print(x.asnumpy().shape)
-        print('-' * 50)
         big_object_output, medium_object_output, small_object_output = self.feature_map(x)
         output_big = self.detect_1(big_object_output)
         output_me = self.detect_2(medium_object_output)

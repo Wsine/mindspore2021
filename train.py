@@ -46,7 +46,8 @@ def init_net_param(network, init_value='ones'):
 
 def main(args_opt):
     #  context.set_context(mode=context.GRAPH_MODE, device_target="Ascend", device_id=args_opt.device_id)
-    context.set_context(mode=context.PYNATIVE_MODE, device_target="CPU", device_id=args_opt.device_id)
+    #  context.set_context(mode=context.PYNATIVE_MODE, device_target="CPU", device_id=args_opt.device_id)
+    context.set_context(mode=context.PYNATIVE_MODE, device_target="GPU", device_id=args_opt.device_id)
     if args_opt.distribute:
         device_num = args_opt.device_num
         context.reset_auto_parallel_context()
