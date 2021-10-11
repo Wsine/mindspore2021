@@ -14,14 +14,12 @@ from mindspore.train import Model
 from mindspore.context import ParallelMode
 from mindspore.train.serialization import load_checkpoint, load_param_into_net
 from mindspore.common.initializer import initializer
-from mindspore.common import set_seed
+from mindspore.nn.dynamic_lr import warmup_lr
 
 from yolov3 import yolov3_resnet18, YoloWithLossCell, TrainingWrapper
 from dataset import create_yolo_dataset, data_to_mindrecord_byte_image
 from config import ConfigYOLOV3ResNet18
 
-
-set_seed(1)
 
 def get_lr(learning_rate, start_step, global_step, decay_step, decay_rate, steps=False):
     """Set learning rate."""
@@ -45,9 +43,9 @@ def init_net_param(network, init_value='ones'):
 
 
 def main(args_opt):
-    #  context.set_context(mode=context.GRAPH_MODE, device_target="Ascend", device_id=args_opt.device_id)
-    #  context.set_context(mode=context.PYNATIVE_MODE, device_target="CPU", device_id=args_opt.device_id)
-    context.set_context(mode=context.PYNATIVE_MODE, device_target="GPU", device_id=args_opt.device_id)
+    context.set_context(mode=context.GRAPH_MODE, device_target="Ascend", device_id=args_opt.device_id)
+    #  context.set_context(mode=context.GRAPH_MODE, device_target="CPU", device_id=args_opt.device_id)
+    #  context.set_context(mode=context.GRAPH_MODE, device_target="GPU", device_id=args_opt.device_id)
     if args_opt.distribute:
         device_num = args_opt.device_num
         context.reset_auto_parallel_context()
@@ -87,10 +85,14 @@ def main(args_opt):
     lr = Tensor(get_lr(learning_rate=args_opt.lr, start_step=args_opt.pre_trained_epoch_size * dataset_size,
                        global_step=total_epoch_size * dataset_size,
                        decay_step=1000, decay_rate=0.95, steps=True))
-    opt = nn.Adam(filter(lambda x: x.requires_grad, net.get_parameters()), lr, loss_scale=loss_scale)
-    net = TrainingWrapper(net, opt, loss_scale)
+    print('lr:', lr)  # TODO: possible bug
+    #  lr = warmup_lr(learning_rate=0.001, total_step=args_opt.epoch_size, step_per_epoch=dataset_size, warmup_epoch=2)
+    #  opt = nn.Adam(filter(lambda x: x.requires_grad, net.get_parameters()), lr, loss_scale=loss_scale)
+    opt = nn.SGD(filter(lambda x: x.requires_grad, net.get_parameters()), learning_rate=0.001, momentum=0.9, weight_decay=0.0005)
+    #  net = TrainingWrapper(net, opt, loss_scale)
+    net = TrainingWrapper(net, opt)
 
-    callback = [LossMonitor(10*dataset_size), ckpoint_cb]
+    callback = [LossMonitor(1*dataset_size), ckpoint_cb]
     model = Model(net)
     dataset_sink_mode = cfg.dataset_sink_mode
     print("============ Start Training ============\nThe first epoch will be slower because of the graph compilation.")
@@ -104,8 +106,8 @@ cfg = edict({
     "device_num": 1,
     "dataset_sink_mode": True,
 
-    "lr": 0.001,
-    "epoch_size": 1,
+    "lr": 0.001,  # Deprecated
+    "epoch_size": 30,
     "batch_size": 32,
     "loss_scale" : 1024,
 
@@ -130,6 +132,9 @@ if __name__ == '__main__':
     parser.add_argument('--output_url', required=True, default=None, help='Location of training outputs.')
 
     args_opt = parser.parse_args()
+    for k in cfg.keys():
+        if hasattr(args_opt, k):
+            setattr(cfg, k, getatrr(args_opt, k))
 
     # The parameter: "args_opt.output_url" refers to the local location of the job training instance.
     # All the output can save to here, and it will upload all of the directory to the specified OBS location after the training.
@@ -141,7 +146,7 @@ if __name__ == '__main__':
     data_path = './dataset/'
     label_path = './labels.csv'
     metadata_path = './metadata.csv'
-    if os.getenv('ISMODELARTS', False) is not False:
+    if os.getenv('ISMODELARTS', False):
         import moxing as mox
         cfg.data_url = 'obs://msc21-dataset2/dataset/'
         cfg.label_url = 'obs://msc21-dataset2/dataset/labels.csv'
@@ -175,7 +180,10 @@ if __name__ == '__main__':
         mindrecord_train_path.mkdir(parents=True, exist_ok=True)
         mindrecord_test_path.mkdir(parents=True, exist_ok=True)
 
-        data_to_mindrecord_byte_image(Path(image_dir), Path(mindrecord_dir_train), prefix, 1, Path(label_path), Path(metadata_path), train_test_split=0.99)
+        data_to_mindrecord_byte_image(
+            Path(image_dir), Path(mindrecord_dir_train), prefix, 1,
+            Path(label_path), Path(metadata_path), train_test_split=0.95
+        )
         print("Mindrecord Created at {}".format(mindrecord_dir_train))
 
     main(cfg)

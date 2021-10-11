@@ -36,7 +36,7 @@ def preprocess_fn(image, box, file, is_training):
     temp = ConfigYOLOV3ResNet18.anchor_scales
     for i in temp:
         config_anchors+=list(i)
-    
+
     anchors = np.array([float(x) for x in config_anchors]).reshape(-1, 2)
     do_hsv = False
     max_boxes = ConfigYOLOV3ResNet18._NUM_BOXES
@@ -133,7 +133,7 @@ def preprocess_fn(image, box, file, is_training):
         return new_image, np.array([h, w], np.float32), box
 
     def _data_aug(image, box, is_training, jitter=0.3, hue=0.1, sat=1.5, val=1.5, image_size=(352, 640)):
-        
+
         """Data augmentation function."""
         if not isinstance(image, Image.Image):
             image = Image.fromarray(image)
@@ -149,7 +149,7 @@ def preprocess_fn(image, box, file, is_training):
         # correct boxes
         box_data = np.zeros((max_boxes, 4 + num_classes))
         flag =0
-        
+
         while True:
             # Prevent the situation that all boxes are eliminated
             new_ar = float(w) / float(h) * _rand(1 - jitter, 1 + jitter) / \
@@ -166,7 +166,7 @@ def preprocess_fn(image, box, file, is_training):
             dx = int(_rand(0, w - nw))
             dy = int(_rand(0, h - nh))
             flag = flag + 1
-            
+
             if len(box) >= 1:
                 t_box = box.copy()
                 np.random.shuffle(t_box)
@@ -248,18 +248,18 @@ def xy_local(collection,element):
 
 def filter_valid_data(label_file):
     """Filter valid image file, which both in image_dir and anno_path."""
-    
+
     label_df = pd.read_csv(label_file)
     label_dict = dict(list(label_df.groupby('image_id')))
-    
+
     label_group_by = label_df.groupby('image_id')
     label_group_by = label_group_by.apply(lambda x: x[['xmin','ymin','xmax','ymax','scc','ac','sclc','nsclc']].to_numpy())
     return label_group_by.keys(), label_group_by
-    
+
 
 
 def data_to_mindrecord_byte_image(
-    image_dir: Path, mindrecord_dir: Path, prefix, file_num, 
+    image_dir: Path, mindrecord_dir: Path, prefix, file_num,
     label_file,
     metadata_file,
     train_test_split=0.8
@@ -267,13 +267,13 @@ def data_to_mindrecord_byte_image(
     """Create MindRecord file by image_dir and anno_path."""
     mindrecord_train_path = str(mindrecord_dir / 'train' / prefix)
     mindrecord_test_path = str(mindrecord_dir / 'test' / prefix)
-    
+
     writer_train = FileWriter(mindrecord_train_path, file_num)
     writer_test = FileWriter(mindrecord_test_path, file_num)
-    
+
     image_files, image_anno_dict = filter_valid_data(label_file)
     num_classes = ConfigYOLOV3ResNet18.num_classes
-    
+
     metadata_df = pd.read_csv(metadata_file)
 
     yolo_json = {
@@ -284,8 +284,11 @@ def data_to_mindrecord_byte_image(
     writer_train.add_schema(yolo_json, "yolo_json")
     writer_test.add_schema(yolo_json, "yolo_json")
 
+    print('number of groups of images:', len(image_files))
     split_at = len(image_files)*train_test_split
-    
+    print('number of training groups of images:', split_at)
+    print('number of test groups of images:', len(image_files) - split_at)
+
     for idx, image_name in enumerate(image_files):
         image_path = os.path.join(image_dir, image_name + '.bmp')
         with open(image_path, 'rb') as f:
@@ -296,7 +299,7 @@ def data_to_mindrecord_byte_image(
         image_anno_dict[image_name][:,[0,2]] *= w
         image_anno_dict[image_name][:,[1,3]] *= h
         annos = np.array(image_anno_dict[image_name],dtype=np.int32)
-        
+
         #print(annos.shape)
         row = {"image": img, "annotation": annos, "file": image_name+'.bmp'}
         if idx < split_at:
