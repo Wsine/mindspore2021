@@ -16,10 +16,10 @@ cfg = ConfigYOLOV3ResNet18()
 
 
 def Net():
-
     net = yolov3_resnet18(cfg)
     eval_net = YoloWithEval(net, cfg)
     return eval_net
+
 
 def _infer_data(img_data, input_shape):
     w, h = img_data.size
@@ -44,15 +44,26 @@ def _infer_data(img_data, input_shape):
     new_image = np.expand_dims(new_image, 0)
     return new_image, np.array([h, w], np.float32)
 
-def pre_process(iid, image):
+
+def disabled_pre_process(iid, image):
     """Data augmentation function."""
+    print('pre_process:', iid)
     image = image.transpose((1, 2 ,0))
     if not isinstance(image, Image.Image):
         image = Image.fromarray(image)
     image_size = cfg.img_shape
     image, image_size = _infer_data(image, image_size)
     return {
-        'x': Tensor(image), 
+        'x': Tensor(image),
+        'image_shape': Tensor(image_size)
+    }
+
+
+def pre_process(iid, image):
+    print('pre_process:', iid)
+    image_size = cfg.img_shape
+    return {
+        'x': Tensor(image),
         'image_shape': Tensor(image_size)
     }
 
@@ -91,6 +102,7 @@ def apply_nms(all_boxes, all_scores, thres, max_boxes):
         order = order[inds + 1]
     return keep
 
+
 def tobox(boxes, box_scores):
     """Calculate precision and recall of predicted bboxes."""
     config = cfg
@@ -101,13 +113,15 @@ def tobox(boxes, box_scores):
     classes_ = []
     max_boxes = config.nms_max_num
     for c in range(num_classes):
+        selected = np.reshape(mask[:, c], [-1]).nonzero()[0]
         class_boxes = np.reshape(boxes, [-1, 4])[np.reshape(mask[:, c], [-1])]
         class_box_scores = np.reshape(box_scores[:, c], [-1])[np.reshape(mask[:, c], [-1])]
         nms_index = apply_nms(class_boxes, class_box_scores, config.nms_threshold, max_boxes)
         #nms_index = apply_nms(class_boxes, class_box_scores, 0.5, max_boxes)
         class_boxes = class_boxes[nms_index]
         class_box_scores = class_box_scores[nms_index]
-        classes = np.ones_like(class_box_scores, 'int32') * c
+        #  classes = np.ones_like(class_box_scores, 'int32') * c
+        classes = box_scores[selected[nms_index]]
         boxes_.append(class_boxes)
         scores_.append(class_box_scores)
         classes_.append(classes)
@@ -118,24 +132,24 @@ def tobox(boxes, box_scores):
 
     return boxes, classes, scores
 
+
 def post_process(iid, prediction):
-    pred_boxes, pred_classes, image_shape = prediction
+    print('post_process:', iid)
+    pred_boxes, pred_scores, image_shape = prediction
     pred_boxes = pred_boxes.asnumpy()[0]
-    pred_classes = pred_classes.asnumpy()[0]
-    # boxes, classes, scores =tobox(pred_boxes, pred_classes)
-    
+    pred_scores = pred_scores.asnumpy()[0]
+    boxes, classes, scores = tobox(pred_boxes, pred_scores)
+
     h,w = image_shape.asnumpy()
-    
-    pred_boxes = pred_boxes / np.array([w, h, w, h])
-    pred_boxes = pred_boxes.clip(0, 1)
+
+    boxes = boxes / np.array([w, h, w, h])
+    boxes = boxes.clip(0, 1)
     # pred_classes[:,[0,1,2,3]] = pred_classes[:,[0,1,3,2]]
-    pred_classes = pred_classes.clip(0, 1)
-    result = np.concatenate([pred_boxes, pred_classes], axis=1)
+    classes = classes.clip(0, 1)
+
+    result = np.concatenate([boxes, classes], axis=1)
     result = result[result[:, [4,5,6,7]].sum(axis=1) > 1e-5]
     return np.array(result)
-
-
-
 
 
 def saliency_map(
@@ -150,14 +164,12 @@ def saliency_map(
     temp_prep2 = {
         'x': ms.Tensor([temp_prep['x']]),
         'image_shape': ms.Tensor([temp_prep['image_shape']]),
-    }   
+    }
 
     # target = ms.Tensor(np.ones(pre_processed_data.shape[0]), ms.int32)
 
     occ = Occlusion(net, activation_fn=ms.nn.Softmax())
     saliency = occ(temp_prep2, 1)
-    
+
     return saliency.asnumpy()[0][0]
 
-    # result = np.resize(saliency.asnumpy(), (image.shape[1], image.shape[2]))
-    # return result

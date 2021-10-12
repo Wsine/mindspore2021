@@ -95,8 +95,8 @@ def run_train(opt):
 
 def prepare_dataset(opt):
     opt.ckpt_dir = os.path.join(opt.output_url, 'ckpt')
-    if os.path.exists(opt.ckpt_dir):
-        shutil.rmtree(opt.ckpt_dir)
+    if not os.path.exists(opt.ckpt_dir):
+        os.makedirs(opt.ckpt_dir)
 
     data_path = './dataset/'
     label_path = './labels.csv'
