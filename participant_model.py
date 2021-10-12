@@ -138,60 +138,26 @@ def post_process(iid, prediction):
 
 
 
+def saliency_map(
+    net,
+    image_id,
+    image,
+    prediction
+):
 
+    context.set_context(mode=context.PYNATIVE_MODE)
+    temp_prep = pre_process(image_id, image)
+    temp_prep2 = {
+        'x': ms.Tensor([temp_prep['x']]),
+        'image_shape': ms.Tensor([temp_prep['image_shape']]),
+    }   
 
+    # target = ms.Tensor(np.ones(pre_processed_data.shape[0]), ms.int32)
 
-
-
-
-
-
-
-
-
-# def saliency_map(
-#     net: Net,
-#     image_id: str,
-#     image: np.array,
-#     prediction: ms.Tensor
-# ):
-#     """
-#     Keyword arguments:
-#     net -- ms.nn.Cell format, an instance of the Net class.
-#     image_id -- str format, for identifying an image.
-#     image -- np.array of CHW format.
-#     prediction -- the output of the network.
+    occ = Occlusion(net, activation_fn=ms.nn.Softmax())
+    saliency = occ(temp_prep2, 1)
     
-#     Returns:
-#     result -- np.array, with the same shape of the image width and height, but only one channel. Shape: (H, W)
-#     Should be the result from ms.explainer.*
-#     """
-    
-#     occ = Occlusion(
-#         net
-#     )
-#     temp_prep = pre_process(image_id, image)
-#     temp_prep2 = {
-#         'x': ms.Tensor([temp_prep['x']]),
-#         'image_shape': ms.Tensor([temp_prep['image_shape']]),
-#     }
-#     saliency = occ(temp_prep2, 1)
-    
-#     return saliency.asnumpy()[0][0];
+    return saliency.asnumpy()[0][0]
 
-
-# '''
-# ../../../input/test_images/
-# ../ckpt/model.ckpt
-# '''    
-
-
-# image_shape = Tensor()
-
-
-# eval_net.set_train(False)
-
-# shape = [default_config.export_batch_size, 3] + cfg.img_shape
-# input_data = Tensor(np.zeros(shape), ms.float32)
-# input_shape = Tensor(np.zeros([1, 2]), ms.float32)
-# inputs = (input_data, input_shape)
+    # result = np.resize(saliency.asnumpy(), (image.shape[1], image.shape[2]))
+    # return result
