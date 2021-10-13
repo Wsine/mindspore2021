@@ -45,23 +45,14 @@ def _infer_data(img_data, input_shape):
     return new_image, np.array([h, w], np.float32)
 
 
-def disabled_pre_process(iid, image):
+def pre_process(iid, image):
     """Data augmentation function."""
     print('pre_process:', iid)
+    image_size = cfg.img_shape
     image = image.transpose((1, 2 ,0))
     if not isinstance(image, Image.Image):
         image = Image.fromarray(image)
-    image_size = cfg.img_shape
     image, image_size = _infer_data(image, image_size)
-    return {
-        'x': Tensor(image),
-        'image_shape': Tensor(image_size)
-    }
-
-
-def pre_process(iid, image):
-    print('pre_process:', iid)
-    image_size = cfg.img_shape
     return {
         'x': Tensor(image),
         'image_shape': Tensor(image_size)
@@ -140,7 +131,7 @@ def post_process(iid, prediction):
     pred_scores = pred_scores.asnumpy()[0]
     boxes, classes, scores = tobox(pred_boxes, pred_scores)
 
-    h,w = image_shape.asnumpy()
+    h, w = image_shape.asnumpy()
 
     boxes = boxes / np.array([w, h, w, h])
     boxes = boxes.clip(0, 1)
