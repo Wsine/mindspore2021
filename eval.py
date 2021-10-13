@@ -77,13 +77,16 @@ def run_eval(opt):
             p = {'image_id': image_id}
             p.update({k: bbox[i] for i, k in enumerate(['xmin', 'ymin', 'xmax', 'ymax'])})
             p.update({f'p{i}': bbox[4+i] for i in range(4)})
-            p.update({'probability_sum': bbox[4:].sum()})
             prediction_df = prediction_df.append(p, ignore_index=True)
-        draw_prediction(opt, image_id, result, num_class)
+        draw_prediction(opt, image_id, result, labels_df, num_class)
 
         if img_iter > 10:
             break
 
+    prediction_df['probability_sum'] = prediction_df.apply(
+        lambda row: sum([row[f'p{i}']for i in range(len(num_class))]),
+        axis=1
+    )
     print(prediction_df)
     froc_score = evaluate(
         prediction_df, labels_df,
@@ -92,7 +95,7 @@ def run_eval(opt):
     print('froc = {}'.format(froc_score))
 
 
-def draw_prediction(opt, image_id, pred, num_class):
+def draw_prediction(opt, image_id, pred, labels_df, num_class):
     opt.draw_dir = os.path.join(opt.output_url, 'draw')
     if not os.path.exists(opt.draw_dir):
         os.makedirs(opt.draw_dir)
@@ -124,8 +127,28 @@ def draw_prediction(opt, image_id, pred, num_class):
         ax.text(
             xmin, ymin,
             s=f'{num_class[classes[box_index]]}: {scores[box_index]}',
-            style='italic', c ='red', bbox={'alpha': 0.5}
+            style='italic', c='red', bbox={'alpha': 0.5}
         )
+
+    # draw groundtruth
+    annotation = labels_df.loc[labels_df['image_id'] == image_id]
+    for it, row in annotation.iterrows():
+        ymin = row['ymin'] * h
+        xmin = row['xmin'] * w
+        ymax = row['ymax'] * h
+        xmax = row['xmax'] * w
+        ax.add_patch(plt.Rectangle(
+            (xmin,ymin), (xmax-xmin), (ymax-ymin),
+            fill=False, edgecolor='blue', linewidth=1
+        ))
+        labels = [v for k, v in num_class.items() if row[f'p{k}'] == 1]
+        labels = ','.join(labels)
+        ax.text(
+            xmin, ymin, s=labels,
+            style='italic', c='blue', bbox={'alpha': 0.5}
+        )
+
+
 
     save_file = os.path.join(opt.draw_dir, image_id.rstrip('.bmp') + '.png')
     print(save_file)
