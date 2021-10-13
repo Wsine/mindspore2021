@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 from bbox import Bbox
-import numpy as np;
+import numpy as np
 
 from typing import List
 

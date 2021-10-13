@@ -49,12 +49,19 @@ def evaluate(
     for label in range(4):  # for each classes
 
         pred_label_df = prediction_df
+        # print(prediction_df)
+        # print("_______________")
         gt_label_df = ground_truth_df[ground_truth_df[f'p{label}'] != 0]
 
         tpss = [[]] # all true positive probabilities
         fpss = [[]] # all false positive probabilities
 
         ground_truth_files = gt_label_df['image_id'].unique()
+        # print(pred_label_df.loc[
+        #         ~(
+        #             prediction_df['image_id'].isin(ground_truth_files)
+        #         )
+        #     ][f'p{label}'])
         fpss.append(
             pred_label_df.loc[
                 ~(
@@ -109,3 +116,14 @@ def evaluate(
 
     # average the froc score
     return frocs / frocs_count
+
+
+if __name__ == '__main__':
+    predefined_fp = [1 / 4, 1 / 2, 1, 2, 4, 8]
+    pre_data = pd.read_csv('labels_p.csv')  # 读取训练数据
+    print(pre_data)
+    # print(pre_data)
+
+    gt_data = pd.read_csv('labels_l.csv')  # 读取训练数据
+    print(gt_data.shape)
+    evaluate(pre_data, gt_data, predefined_fp)
