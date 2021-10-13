@@ -1,6 +1,7 @@
 import os
 import argparse
 import numpy as np
+import pandas as pd
 from PIL import Image
 import matplotlib.pyplot as plt
 import mindspore as ms
@@ -8,6 +9,7 @@ from dataset import create_yolo_dataset
 from train import prepare_dataset
 import participant_model
 from participant_model import tobox
+from evaluate import evaluate
 
 
 def get_model_net_with_weights(ckpt_file='./yolov3.ckpt'):
@@ -21,32 +23,28 @@ def get_model_net_with_weights(ckpt_file='./yolov3.ckpt'):
 def run_eval(opt):
     net = get_model_net_with_weights()
 
-    #  dataset = create_yolo_dataset(
-    #      opt.mindrecord_file, batch_size=opt.batch_size,
-    #      device_num=1, rank=0, is_training=False
-    #  )
-    #  dataset_size = dataset.get_dataset_size()
-    #  print(f"Dataset Created with num of batches: {dataset_size}")
+    meta_df = pd.read_csv('metadata.csv')
+    labels_df = pd.read_csv('labels.csv')
 
-    meta = open('metadata.csv')
+    num_class = {0: 'SCC', 1: 'AC', 2: 'SCLC', 3: 'NSCLC'}
+    rename_mapping = {v.lower(): f'p{k}' for k, v in num_class.items()}
+    labels_df = labels_df.rename(columns=rename_mapping)
+    labels_df['probability_sum'] = labels_df.apply(
+        lambda row: sum([row[f'p{i}']for i in range(len(num_class))]),
+        axis=1
+    )
 
-    results = []
-    xai_results = []
-    num_class = {0:'SCC', 1: 'AC', 2:'SCLC', 3: 'NSCLC'}
-    #  for data in dataset.create_dict_iterator(output_numpy=True):
-    #      image_file = data['file']  # type: ignore
-    #      image_id = image_file.tobytes().decode('ascii').rstrip('.bmp')
-    #      print(image_id)
-    #      image = data['image']  # type: ignore
-    #      image = data['image'][0].astype(np.uint8)  # type: ignore
-    #      #  image_shape = data['image_shape']  # type: ignore
-
-    for line in meta.readlines()[1:]:
-        image_id, width, height, _ = line.strip().split(',')
-        print(image_id)
-        image_path = os.path.join('dataset', 'images', image_id + '.bmp')
+    prediction_df = pd.DataFrame(columns=[
+        'image_id', 'xmin', 'ymin', 'xmax', 'ymax',
+        'p0', 'p1', 'p2', 'p3', 'probability_sum'
+    ])
+    for img_iter, row in meta_df.iterrows():
+        image_id = row['image_id']
+        image_path = os.path.join('dataset', 'images', row['image_id'] + '.bmp')
         image = np.asarray(Image.open(image_path), dtype=np.uint8).transpose((2, 0, 1))
-        image_shape = (int(height), int(width))
+        image_shape = (row['height'], row['width'])
+
+        print(image_id)
 
         if hasattr(participant_model, 'pre_process'):
             pre_processed_data = participant_model.pre_process(
@@ -73,18 +71,28 @@ def run_eval(opt):
         #      )
         #  else:
         #      xai_result = None
-
-        draw_prediction(opt, image_id, image, result, num_class)
-
-        results.append(result)
         #  xai_results.append(xai_result)
-        if len(results) > 10:
+
+        for bbox in result:
+            p = {'image_id': image_id}
+            p.update({k: bbox[i] for i, k in enumerate(['xmin', 'ymin', 'xmax', 'ymax'])})
+            p.update({f'p{i}': bbox[4+i] for i in range(4)})
+            p.update({'probability_sum': bbox[4:].sum()})
+            prediction_df = prediction_df.append(p, ignore_index=True)
+        draw_prediction(opt, image_id, result, num_class)
+
+        if img_iter > 10:
             break
 
-    meta.close()
+    print(prediction_df)
+    froc_score = evaluate(
+        prediction_df, labels_df,
+        fp_sampling=[1/4, 1/2, 1, 2, 4, 8]
+    )
+    print('froc = {}'.format(froc_score))
 
 
-def draw_prediction(opt, image_id, img_np, pred, num_class):
+def draw_prediction(opt, image_id, pred, num_class):
     opt.draw_dir = os.path.join(opt.output_url, 'draw')
     if not os.path.exists(opt.draw_dir):
         os.makedirs(opt.draw_dir)

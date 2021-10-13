@@ -143,24 +143,24 @@ def post_process(iid, prediction):
     return np.array(result)
 
 
-def saliency_map(
-    net,
-    image_id,
-    image,
-    prediction
-):
-
-    context.set_context(mode=context.PYNATIVE_MODE)
-    temp_prep = pre_process(image_id, image)
-    temp_prep2 = {
-        'x': ms.Tensor([temp_prep['x']]),
-        'image_shape': ms.Tensor([temp_prep['image_shape']]),
-    }
-
-    # target = ms.Tensor(np.ones(pre_processed_data.shape[0]), ms.int32)
-
-    occ = Occlusion(net, activation_fn=ms.nn.Softmax())
-    saliency = occ(temp_prep2, 1)
-
-    return saliency.asnumpy()[0][0]
+#  def saliency_map(
+#      net,
+#      image_id,
+#      image,
+#      prediction
+#  ):
+#
+#      context.set_context(mode=context.PYNATIVE_MODE)
+#      temp_prep = pre_process(image_id, image)
+#      temp_prep2 = {
+#          'x': ms.Tensor([temp_prep['x']]),
+#          'image_shape': ms.Tensor([temp_prep['image_shape']]),
+#      }
+#
+#      # target = ms.Tensor(np.ones(pre_processed_data.shape[0]), ms.int32)
+#
+#      occ = Occlusion(net, activation_fn=ms.nn.Softmax())
+#      saliency = occ(temp_prep2, 1)
+#
+#      return saliency.asnumpy()[0][0]
 
