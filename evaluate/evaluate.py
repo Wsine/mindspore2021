@@ -4,10 +4,10 @@ from typing import List
 import numpy as np
 import pandas as pd
 
-from bbox import read_participants_input
-from evaluate_saliency import evaluate_saliency
-from evaluate_bbox import tp_fp_from_bboxes
-from froc import froc
+from evaluate.bbox import read_participants_input
+from evaluate.evaluate_saliency import evaluate_saliency
+from evaluate.evaluate_bbox import tp_fp_from_bboxes
+from evaluate.froc import froc
 
 # evaluate the FROC for prediction and ground truth bounding boxes
 def evaluate(
@@ -21,7 +21,7 @@ def evaluate(
     prediction_df and ground_truth_df have columns:
         <image_id, xmin, ymin, xmax, ymax, p0, p1, p2, p3, probability_sum>
 
-    fp_sampling is the false positive per image values for sampling.    
+    fp_sampling is the false positive per image values for sampling.
 
     """
 
@@ -101,7 +101,7 @@ def evaluate(
             fp_sampling
         )
         print(f'Evaluating label {label}, score: {froc_score}')
-        
+
         # accumulate the froc score
         if gt_label_df.shape[0] > 0:
             frocs += froc_score

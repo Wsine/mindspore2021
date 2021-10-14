@@ -17,9 +17,9 @@ from mindspore.train.serialization import load_checkpoint, load_param_into_net
 from mindspore.common.initializer import initializer
 from mindspore.nn.dynamic_lr import warmup_lr, exponential_decay_lr
 
-from yolov3 import yolov3_resnet18, YoloWithLossCell, TrainingWrapper
 from dataset import create_yolo_dataset, data_to_mindrecord_byte_image
-from config import ConfigYOLOV3ResNet18
+from yolov3.yolov3 import yolov3_resnet18, YoloWithLossCell, TrainingWrapper
+from yolov3.config import ConfigYOLOV3ResNet18
 
 
 def get_lr(learning_rate, start_step, global_step, decay_step, decay_rate, steps=False):

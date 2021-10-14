@@ -27,7 +27,7 @@ from PIL import Image
 import mindspore.dataset as de
 from mindspore.mindrecord import FileWriter
 import mindspore.dataset.vision.c_transforms as C
-from config import ConfigYOLOV3ResNet18
+from yolov3.config import ConfigYOLOV3ResNet18
 
 
 def preprocess_fn(image, box, file, is_training):
