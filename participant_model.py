@@ -8,8 +8,8 @@ from mindspore import context, Tensor
 from mindspore.train.serialization import export, load_checkpoint, load_param_into_net
 from mindspore.explainer.explanation import Occlusion
 
-from yolov3 import yolov3_resnet18, YoloWithEval
-from config import ConfigYOLOV3ResNet18
+from yolov3.yolov3 import yolov3_resnet18, YoloWithEval
+from yolov3.config import ConfigYOLOV3ResNet18
 
 
 cfg = ConfigYOLOV3ResNet18()

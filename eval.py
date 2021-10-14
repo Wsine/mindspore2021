@@ -9,7 +9,7 @@ from dataset import create_yolo_dataset
 from train import prepare_dataset
 import participant_model
 from participant_model import tobox
-from evaluate import evaluate
+from evaluate.evaluate import evaluate
 
 
 def get_model_net_with_weights(ckpt_file='./yolov3.ckpt'):
