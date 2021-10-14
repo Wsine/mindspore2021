@@ -133,7 +133,6 @@ def preprocess_fn(image, box, file, is_training):
         return new_image, np.array([h, w], np.float32), box
 
     def _data_aug(image, box, is_training, jitter=0.3, hue=0.1, sat=1.5, val=1.5, image_size=(352, 640)):
-
         """Data augmentation function."""
         if not isinstance(image, Image.Image):
             image = Image.fromarray(image)

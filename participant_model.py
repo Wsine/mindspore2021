@@ -112,14 +112,14 @@ def tobox(boxes, box_scores):
         class_boxes = class_boxes[nms_index]
         class_box_scores = class_box_scores[nms_index]
         #  classes = np.ones_like(class_box_scores, 'int32') * c
-        #  classes = box_scores[selected[nms_index]]
-        classes = np.zeros((len(nms_index), 4), dtype=np.int32)
-        if c == 0:
-            classes[:, [0,3]] = 1
-        elif c == 1:
-            classes[:, [1,3]] = 1
-        else:
-            classes[:, c] = 1
+        classes = box_scores[selected[nms_index]]
+        #  classes = np.zeros((len(nms_index), 4), dtype=np.int32)
+        #  if c == 0:
+        #      classes[:, [0,3]] = 1
+        #  elif c == 1:
+        #      classes[:, [1,3]] = 1
+        #  else:
+        #      classes[:, c] = 1
         boxes_.append(class_boxes)
         scores_.append(class_box_scores)
         classes_.append(classes)
@@ -136,6 +136,8 @@ def post_process(iid, prediction):
     pred_boxes, pred_scores, image_shape = prediction
     pred_boxes = pred_boxes.asnumpy()[0]
     pred_scores = pred_scores.asnumpy()[0]
+    pred_boxes[:, [0,1]] = pred_boxes[:, [1,0]]
+    pred_boxes[:, [2,3]] = pred_boxes[:, [3,2]]
     boxes, classes, scores = tobox(pred_boxes, pred_scores)
 
     h, w = image_shape.asnumpy()
