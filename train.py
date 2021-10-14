@@ -54,7 +54,7 @@ def run_train(opt):
     if opt.is_modelarts is True:
         context.set_context(mode=context.GRAPH_MODE, device_target="Ascend", device_id=opt.device_id)
     else:
-        context.set_context(mode=context.GRAPH_MODE, device_target="GPU", device_id=opt.device_id)
+        context.set_context(mode=context.PYNATIVE_MODE, device_target="GPU", device_id=opt.device_id)
     #  context.set_context(mode=context.PYNATIVE_MODE, device_target="CPU", device_id=opt.device_id)
 
     rank = 0
