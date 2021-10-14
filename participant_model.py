@@ -12,6 +12,16 @@ from yolov3.yolov3 import yolov3_resnet18, YoloWithEval
 from yolov3.config import ConfigYOLOV3ResNet18
 
 
+def np_softmax(z):
+    assert len(z.shape) == 2
+    s = np.max(z, axis=1)
+    s = s[:, np.newaxis] # necessary step to do broadcasting
+    e_x = np.exp(z - s)
+    div = np.sum(e_x, axis=1)
+    div = div[:, np.newaxis] # dito
+    return e_x / div
+
+
 cfg = ConfigYOLOV3ResNet18()
 
 
@@ -139,6 +149,9 @@ def post_process(iid, prediction):
     pred_boxes[:, [0,1]] = pred_boxes[:, [1,0]]
     pred_boxes[:, [2,3]] = pred_boxes[:, [3,2]]
     boxes, classes, scores = tobox(pred_boxes, pred_scores)
+
+    # softmax
+    #  classes = np_softmax(classes)
 
     h, w = image_shape.asnumpy()
 
