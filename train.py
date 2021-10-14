@@ -10,16 +10,23 @@ import mindspore.nn as nn
 import mindspore as ms
 from mindspore import context, Tensor
 from mindspore.communication.management import init
-from mindspore.train.callback import CheckpointConfig, ModelCheckpoint, LossMonitor
+from mindspore.train.callback import CheckpointConfig, ModelCheckpoint, LossMonitor, TimeMonitor
 from mindspore.train import Model
 from mindspore.context import ParallelMode
 from mindspore.train.serialization import load_checkpoint, load_param_into_net
 from mindspore.common.initializer import initializer
 from mindspore.nn.dynamic_lr import warmup_lr, exponential_decay_lr
 
-from dataset import create_yolo_dataset, data_to_mindrecord_byte_image
-from yolov3.yolov3 import yolov3_resnet18, YoloWithLossCell, TrainingWrapper
-from yolov3.config import ConfigYOLOV3ResNet18
+# yolov3
+#  from yolov3.yolov3 import yolov3_resnet18, YoloWithLossCell, TrainingWrapper
+#  from yolov3.config import ConfigYOLOV3ResNet18
+#  from yolov3.dataset import create_yolo_dataset, data_to_mindrecord_byte_image
+# fastrrcnn
+from fasterrcnn.faster_rcnn_resnet import Faster_Rcnn_Resnet
+from fasterrcnn.config import ConfigFastRCNN
+from fasterrcnn.network_define import LossCallBack, WithLossCell, TrainOneStepCell, LossNet
+from fasterrcnn.lr_schedule import dynamic_lr
+from fasterrcnn.dataset import create_fasterrcnn_dataset, data_to_mindrecord_byte_image
 
 
 def get_lr(learning_rate, start_step, global_step, decay_step, decay_rate, steps=False):
@@ -58,52 +65,67 @@ def run_train(opt):
                                           device_num=device_num)
         init()
 
-    loss_scale = float(opt.loss_scale)
+    #  loss_scale = float(opt.loss_scale)
 
     # When create MindDataset, using the fitst mindrecord file, such as yolo.mindrecord0.
-    dataset = create_yolo_dataset(opt.mindrecord_file,
-                                  batch_size=opt.batch_size, device_num=device_num, rank=rank)
+    #  dataset = create_yolo_dataset(opt.mindrecord_file,
+    #                                batch_size=opt.batch_size, device_num=device_num, rank=rank)
+    config = ConfigFastRCNN()
+    dataset = create_fasterrcnn_dataset(config, opt.mindrecord_file,
+                                  batch_size=config.batch_size, device_num=device_num, rank_id=rank)
     dataset_size = dataset.get_dataset_size()
     print(f"Dataset Created with num of batches: {dataset_size}")
 
-    net = yolov3_resnet18(ConfigYOLOV3ResNet18())
-    net = YoloWithLossCell(net, ConfigYOLOV3ResNet18())
-    init_net_param(net, "XavierUniform")
+    #  net = yolov3_resnet18(ConfigYOLOV3ResNet18())
+    #  net = YoloWithLossCell(net, ConfigYOLOV3ResNet18())
+    #  init_net_param(net, "XavierUniform")
 
-    # checkpoint
-    ckpt_config = CheckpointConfig(save_checkpoint_steps=dataset_size * opt.save_checkpoint_epochs,
-                                  keep_checkpoint_max=opt.keep_checkpoint_max)
-    ckpoint_cb = ModelCheckpoint(prefix="yolov3", directory=opt.ckpt_dir, config=ckpt_config)
+    net = Faster_Rcnn_Resnet(config).set_train()
+    loss = LossNet()
 
-    total_epoch_size = 60
-    if opt.distribute:
-        total_epoch_size = 160
-    lr = Tensor(get_lr(learning_rate=opt.lr, start_step=0,
-                       global_step=total_epoch_size * dataset_size,
-                       decay_step=1000, decay_rate=0.95, steps=True))
+    #  total_epoch_size = 60
+    #  if opt.distribute:
+    #      total_epoch_size = 160
+    #  lr = Tensor(get_lr(learning_rate=opt.lr, start_step=0,
+    #                     global_step=total_epoch_size * dataset_size,
+    #                     decay_step=1000, decay_rate=0.95, steps=True))
 
     #  total_steps = opt.epoch_size * dataset_size
     #  turning_step = 10
     #  lr = warmup_lr(opt.lr, turning_step, 2, 2)
     #  lr += exponential_decay_lr(opt.lr, 0.9, total_steps-turning_step, 2, 1)
     #  lr = exponential_decay_lr(opt.lr, 0.99, opt.epoch_size, 2, 1)
-    #  print(lr)
     #  lr = Tensor(lr).astype(ms.dtype.float32)
+    lr = dynamic_lr(config, dataset_size)
+    print(lr)
+    lr = Tensor(lr, ms.common.dtype.float32)
 
-    optim = nn.Adam(filter(lambda x: x.requires_grad, net.get_parameters()), lr, loss_scale=loss_scale)
+    #  optim = nn.Adam(filter(lambda x: x.requires_grad, net.get_parameters()), lr, loss_scale=loss_scale)
     #  optim = nn.SGD(
     #      filter(lambda x: x.requires_grad, net.get_parameters()), lr,
     #      momentum=0.937, weight_decay=0.0005, loss_scale=loss_scale
     #  )
-    net = TrainingWrapper(net, optim, loss_scale)
+    optim = nn.SGD(params=net.trainable_params(), learning_rate=lr,
+                   momentum=config.momentum, weight_decay=config.weight_decay, loss_scale=config.loss_scale)
 
-    callback = [LossMonitor(1*dataset_size), ckpoint_cb]
+    #  net = TrainingWrapper(net, optim, loss_scale)
+    net = WithLossCell(net, loss)
+    net = TrainOneStepCell(net, optim, sens=config.loss_scale)
+
+    # checkpoint
+    ckpt_config = CheckpointConfig(save_checkpoint_steps=dataset_size * opt.save_checkpoint_epochs,
+                                  keep_checkpoint_max=opt.keep_checkpoint_max)
+    #  ckpoint_cb = ModelCheckpoint(prefix="yolov3", directory=opt.ckpt_dir, config=ckpt_config)
+    ckpoint_cb = ModelCheckpoint(prefix="fastrcnn", directory=opt.ckpt_dir, config=ckpt_config)
+    #  callback = [TimeMonitor(data_size=dataset_size), LossMonitor(1*dataset_size), ckpoint_cb]
+    callback = [TimeMonitor(data_size=dataset_size), LossMonitor(), ckpoint_cb]
 
     model = Model(net)
-    dataset_sink_mode = opt.dataset_sink_mode
+    #  dataset_sink_mode = opt.dataset_sink_mode
     print("============ Start Training ============")
     print("The first epoch will be slower because of the graph compilation.")
-    model.train(opt.epoch_size, dataset, callbacks=callback, dataset_sink_mode=dataset_sink_mode)
+    #  model.train(opt.epoch_size, dataset, callbacks=callback, dataset_sink_mode=dataset_sink_mode)
+    model.train(config.epoch_size, dataset, callbacks=callback, dataset_sink_mode=False)
 
 
 def prepare_dataset(opt):
@@ -162,14 +184,14 @@ if __name__ == '__main__':
     parser.add_argument('--output_url', required=True, default=None, help='Location of training outputs.')
     parser.add_argument('--is_modelarts', type=bool, default=False)
     parser.add_argument('--device_id', type=int, default=0)
-    parser.add_argument('--loss_scale', type=int, default=1024)
-    parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--epoch_size', type=int, default=50)
+    #  parser.add_argument('--loss_scale', type=int, default=1024)
+    #  parser.add_argument('--batch_size', type=int, default=32)
+    #  parser.add_argument('--epoch_size', type=int, default=50)
+    #  parser.add_argument('--lr', type=float, default=0.001)
+    #  parser.add_argument('--dataset_sink_mode', type=bool, default=True)
     parser.add_argument('--save_checkpoint_epochs', type=int, default=1)
     parser.add_argument('--keep_checkpoint_max', type=int, default=50)
-    parser.add_argument('--dataset_sink_mode', type=bool, default=True)
     parser.add_argument('--distribute', type=bool, default=False)
-    parser.add_argument('--lr', type=float, default=0.001)
 
     opt = parser.parse_args()
     print(opt)
