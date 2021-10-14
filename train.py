@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import mindspore.nn as nn
+import mindspore as ms
 from mindspore import context, Tensor
 from mindspore.communication.management import init
 from mindspore.train.callback import CheckpointConfig, ModelCheckpoint, LossMonitor
@@ -14,7 +15,7 @@ from mindspore.train import Model
 from mindspore.context import ParallelMode
 from mindspore.train.serialization import load_checkpoint, load_param_into_net
 from mindspore.common.initializer import initializer
-from mindspore.nn.dynamic_lr import warmup_lr
+from mindspore.nn.dynamic_lr import warmup_lr, exponential_decay_lr
 
 from yolov3 import yolov3_resnet18, YoloWithLossCell, TrainingWrapper
 from dataset import create_yolo_dataset, data_to_mindrecord_byte_image
@@ -77,11 +78,23 @@ def run_train(opt):
     total_epoch_size = 60
     if opt.distribute:
         total_epoch_size = 160
-
     lr = Tensor(get_lr(learning_rate=opt.lr, start_step=0,
                        global_step=total_epoch_size * dataset_size,
                        decay_step=1000, decay_rate=0.95, steps=True))
+
+    #  total_steps = opt.epoch_size * dataset_size
+    #  turning_step = 10
+    #  lr = warmup_lr(opt.lr, turning_step, 2, 2)
+    #  lr += exponential_decay_lr(opt.lr, 0.9, total_steps-turning_step, 2, 1)
+    #  lr = exponential_decay_lr(opt.lr, 0.99, opt.epoch_size, 2, 1)
+    #  print(lr)
+    #  lr = Tensor(lr).astype(ms.dtype.float32)
+
     optim = nn.Adam(filter(lambda x: x.requires_grad, net.get_parameters()), lr, loss_scale=loss_scale)
+    #  optim = nn.SGD(
+    #      filter(lambda x: x.requires_grad, net.get_parameters()), lr,
+    #      momentum=0.937, weight_decay=0.0005, loss_scale=loss_scale
+    #  )
     net = TrainingWrapper(net, optim, loss_scale)
 
     callback = [LossMonitor(1*dataset_size), ckpoint_cb]
@@ -153,7 +166,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--epoch_size', type=int, default=50)
     parser.add_argument('--save_checkpoint_epochs', type=int, default=1)
-    parser.add_argument('--keep_checkpoint_max', type=int, default=10)
+    parser.add_argument('--keep_checkpoint_max', type=int, default=50)
     parser.add_argument('--dataset_sink_mode', type=bool, default=True)
     parser.add_argument('--distribute', type=bool, default=False)
     parser.add_argument('--lr', type=float, default=0.001)

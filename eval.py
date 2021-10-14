@@ -116,10 +116,14 @@ def draw_prediction(opt, image_id, pred, labels_df, num_class):
 
     # draw prediction
     for box_index in range(boxes.shape[0]):
-        ymin = boxes[box_index][0] * w
-        xmin = boxes[box_index][1] * h
-        ymax = boxes[box_index][2] * w
-        xmax = boxes[box_index][3] * h
+        #  ymin = boxes[box_index][0] * w
+        #  xmin = boxes[box_index][1] * h
+        #  ymax = boxes[box_index][2] * w
+        #  xmax = boxes[box_index][3] * h
+        xmin = boxes[box_index][0] * w
+        ymin = boxes[box_index][1] * h
+        xmax = boxes[box_index][2] * w
+        ymax = boxes[box_index][3] * h
         ax.add_patch(plt.Rectangle(
             (xmin,ymin), (xmax-xmin), (ymax-ymin),
             fill=False, edgecolor='red', linewidth=1
@@ -133,10 +137,10 @@ def draw_prediction(opt, image_id, pred, labels_df, num_class):
     # draw groundtruth
     annotation = labels_df.loc[labels_df['image_id'] == image_id]
     for it, row in annotation.iterrows():
-        ymin = row['ymin'] * h
         xmin = row['xmin'] * w
-        ymax = row['ymax'] * h
+        ymin = row['ymin'] * h
         xmax = row['xmax'] * w
+        ymax = row['ymax'] * h
         ax.add_patch(plt.Rectangle(
             (xmin,ymin), (xmax-xmin), (ymax-ymin),
             fill=False, edgecolor='blue', linewidth=1
