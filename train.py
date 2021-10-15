@@ -55,6 +55,7 @@ def run_train(opt):
         context.set_context(mode=context.GRAPH_MODE, device_target="Ascend", device_id=opt.device_id)
     else:
         context.set_context(mode=context.PYNATIVE_MODE, device_target="GPU", device_id=opt.device_id)
+        #  context.set_context(mode=context.GRAPH_MODE, device_target="GPU", device_id=opt.device_id)
     #  context.set_context(mode=context.PYNATIVE_MODE, device_target="CPU", device_id=opt.device_id)
 
     rank = 0
@@ -97,7 +98,6 @@ def run_train(opt):
     #  lr = exponential_decay_lr(opt.lr, 0.99, opt.epoch_size, 2, 1)
     #  lr = Tensor(lr).astype(ms.dtype.float32)
     lr = dynamic_lr(config, dataset_size)
-    print(lr)
     lr = Tensor(lr, ms.common.dtype.float32)
 
     #  optim = nn.Adam(filter(lambda x: x.requires_grad, net.get_parameters()), lr, loss_scale=loss_scale)

@@ -131,6 +131,7 @@ class Faster_Rcnn_Resnet(nn.Cell):
         self.concat = P.Concat(axis=0)
         self.concat_1 = P.Concat(axis=1)
         self.concat_2 = P.Concat(axis=2)
+        self.teamname = 'TSST'
         self.reshape = P.Reshape()
         self.select = P.Select()
         self.greater = P.Greater()
@@ -343,6 +344,7 @@ class Faster_Rcnn_Resnet(nn.Cell):
             output += (rpn_loss, rcnn_loss, rpn_cls_loss, rpn_reg_loss, rcnn_cls_loss, rcnn_reg_loss)
         else:
             output = self.get_det_bboxes(rcnn_cls_loss, rcnn_reg_loss, rcnn_masks, bboxes_all, img_metas)
+            return output, img_metas
 
         return output
 
