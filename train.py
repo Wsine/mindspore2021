@@ -93,10 +93,10 @@ def run_train(opt):
     #                     global_step=total_epoch_size * dataset_size,
     #                     decay_step=1000, decay_rate=0.95, steps=True))
 
-    #  total_steps = opt.epoch_size * dataset_size
-    #  turning_step = 10
-    #  lr = warmup_lr(opt.lr, turning_step, 2, 2)
-    #  lr += exponential_decay_lr(opt.lr, 0.9, total_steps-turning_step, 2, 1)
+    #  total_steps = config.epoch_size * dataset_size
+    #  turning_step = 100
+    #  lr = warmup_lr(config.base_lr, turning_step, 2, 2)
+    #  lr += exponential_decay_lr(config.base_lr, 0.9, total_steps-turning_step, 2, 1)
     #  lr = exponential_decay_lr(opt.lr, 0.99, opt.epoch_size, 2, 1)
     #  lr = Tensor(lr).astype(ms.dtype.float32)
     lr = dynamic_lr(config, dataset_size)
