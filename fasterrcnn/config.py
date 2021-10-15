@@ -36,16 +36,16 @@ class ConfigFastRCNN:
     keep_ratio = True
     flip_ratio = 0.5
     expand_ratio = 1.0
-    #  batch_size = 2
-    batch_size = 1
+    batch_size = 2
+    #  batch_size = 1
     epoch_size = 20
     loss_scale = 256
     momentum = 0.91
     weight_decay = 0.00001
 
     # LR
-    #  base_lr = 0.04
-    base_lr = 0.001
+    base_lr = 0.04
+    #  base_lr = 0.001
     warmup_step = 500
     warmup_ratio = 0.0625
     sgd_step = [8, 11]

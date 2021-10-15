@@ -100,6 +100,8 @@ class WithLossCell(nn.Cell):
 
     def construct(self, x, img_shape, gt_bboxe, gt_label, gt_num):
         loss1, loss2, loss3, loss4, loss5, loss6 = self._backbone(x, img_shape, gt_bboxe, gt_label, gt_num)
+        #  print(' --------------- fuck loss --------------')
+        #  print(loss1, loss2, loss3, loss4, loss5, loss6)
         return self._loss_fn(loss1, loss2, loss3, loss4, loss5, loss6)
 
     @property

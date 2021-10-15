@@ -406,7 +406,7 @@ def data_to_mindrecord_byte_image(
     writer_test = FileWriter(mindrecord_test_path, file_num)
 
     image_files, image_anno_dict = filter_valid_data(label_file)
-    num_classes = ConfigFastRCNN.num_classes
+    num_classes = ConfigFastRCNN.num_classes - 1  # remove background class
 
     metadata_df = pd.read_csv(metadata_file)
 
@@ -433,6 +433,13 @@ def data_to_mindrecord_byte_image(
         image_anno_dict[image_name][:,[0,2]] *= w
         image_anno_dict[image_name][:,[1,3]] *= h
         annos = np.array(image_anno_dict[image_name],dtype=np.int32)
+
+        #  print('------- annos ----------')
+        #  print(annos.shape)
+        #  not_keep = np.logical_and((annos[:, 2] - annos[:, 0] < 10), (annos[:, 3] - annos[:, 1] < 10))
+        #  keep = np.invert(not_keep)
+        #  annos = annos[keep]
+        #  print(annos.shape)
 
         #print(annos.shape)
         row = {"image": img, "annotation": annos, "file": image_name+'.bmp'}

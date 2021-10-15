@@ -72,8 +72,8 @@ def run_train(opt):
     #  dataset = create_yolo_dataset(opt.mindrecord_file,
     #                                batch_size=opt.batch_size, device_num=device_num, rank=rank)
     config = ConfigFastRCNN()
-    dataset = create_fasterrcnn_dataset(config, opt.mindrecord_file,
-                                  batch_size=config.batch_size, device_num=device_num, rank_id=rank)
+    dataset = create_fasterrcnn_dataset(
+        config, opt.mindrecord_file, batch_size=config.batch_size, device_num=device_num, rank_id=rank)
     dataset_size = dataset.get_dataset_size()
     print(f"Dataset Created with num of batches: {dataset_size}")
 
@@ -82,6 +82,8 @@ def run_train(opt):
     #  init_net_param(net, "XavierUniform")
 
     net = Faster_Rcnn_Resnet(config).set_train()
+    param_dict = ms.load_checkpoint(opt.backbone_ckpt_file)
+    ms.load_param_into_net(net.backbone, param_dict)
     loss = LossNet()
 
     #  total_epoch_size = 60
@@ -192,6 +194,7 @@ if __name__ == '__main__':
     parser.add_argument('--save_checkpoint_epochs', type=int, default=1)
     parser.add_argument('--keep_checkpoint_max', type=int, default=50)
     parser.add_argument('--distribute', type=bool, default=False)
+    parser.add_argument('--backbone_ckpt_file', type=str, default='resnet_backbone.ckpt')
 
     opt = parser.parse_args()
     print(opt)
