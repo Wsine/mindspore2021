@@ -8,8 +8,13 @@ from mindspore import context, Tensor
 from mindspore.train.serialization import export, load_checkpoint, load_param_into_net
 from mindspore.explainer.explanation import Occlusion
 
-from yolov3.yolov3 import yolov3_resnet18, YoloWithEval
-from yolov3.config import ConfigYOLOV3ResNet18
+# yolov3
+#  from yolov3.yolov3 import yolov3_resnet18, YoloWithEval
+#  from yolov3.config import ConfigYOLOV3ResNet18
+# fastrcnn
+from fasterrcnn.faster_rcnn_resnet import Faster_Rcnn_Resnet
+from fasterrcnn.config import ConfigFastRCNN
+from fasterrcnn.dataset import rescale_column_test, resize_column_test, imnormalize_column, transpose_column
 
 
 def np_softmax(z):
@@ -22,16 +27,18 @@ def np_softmax(z):
     return e_x / div
 
 
-cfg = ConfigYOLOV3ResNet18()
+#  cfg = ConfigYOLOV3ResNet18()
+cfg = ConfigFastRCNN()
 
 
 def Net():
-    net = yolov3_resnet18(cfg)
-    eval_net = YoloWithEval(net, cfg)
+    #  net = yolov3_resnet18(cfg)
+    #  eval_net = YoloWithEval(net, cfg)
+    eval_net = Faster_Rcnn_Resnet(cfg).set_train(False)
     return eval_net
 
 
-def _infer_data(img_data, input_shape):
+def _infer_data_yolov3(img_data, input_shape):
     w, h = img_data.size
     input_h, input_w = input_shape
     scale = min(float(input_w) / float(w), float(input_h) / float(h))
@@ -55,17 +62,65 @@ def _infer_data(img_data, input_shape):
     return new_image, np.array([h, w], np.float32)
 
 
+def _infer_data_fastrcnn(image):
+    image_bgr = image.copy()
+    image_bgr[:, :, 0] = image[:, :, 2]
+    image_bgr[:, :, 1] = image[:, :, 1]
+    image_bgr[:, :, 2] = image[:, :, 0]
+    image_shape = image_bgr.shape[:2]
+    box_shape = 1
+    fake_box = np.asarray([[1, 2, 1, 2]])
+    fake_label = np.asarray([0])
+    fake_iscrowd = np.asarray([0])
+
+    pad_max_number = 128
+    gt_box_new = np.pad(fake_box, ((0, pad_max_number - box_shape), (0, 0)), mode="constant", constant_values=0)
+    gt_label_new = np.pad(fake_label, ((0, pad_max_number - box_shape)), mode="constant", constant_values=-1)
+    gt_iscrowd_new = np.pad(fake_iscrowd, ((0, pad_max_number - box_shape)), mode="constant", constant_values=1)
+    gt_iscrowd_new_revert = (~(gt_iscrowd_new.astype(np.bool))).astype(np.int32)
+
+
+    image_shape = image_shape[:2]
+    input_data = image_bgr, image_shape, gt_box_new, gt_label_new, gt_iscrowd_new_revert
+
+    if cfg.keep_ratio:
+        input_data = rescale_column_test(*input_data, config=cfg)
+    else:
+        input_data = resize_column_test(*input_data, config=cfg)
+    input_data = imnormalize_column(*input_data)
+
+    output_data = transpose_column(*input_data)
+    return output_data
+
+
 def pre_process(iid, image):
     """Data augmentation function."""
     print('pre_process:', iid)
-    image_size = cfg.img_shape
+
+    #  image_size = cfg.img_shape
+    #  image = image.transpose((1, 2 ,0))
+    #  if not isinstance(image, Image.Image):
+    #      image = Image.fromarray(image)
+    #  image, image_size = _infer_data_yolov3(image, image_size)
+    #  return {
+    #      'x': Tensor(image),
+    #      'image_shape': Tensor(image_size)
+    #  }
+
     image = image.transpose((1, 2 ,0))
-    if not isinstance(image, Image.Image):
-        image = Image.fromarray(image)
-    image, image_size = _infer_data(image, image_size)
+    img_data, img_shape, fk_bboxes, fk_label, fk_num = _infer_data_fastrcnn(image)
+    img_data = np.expand_dims(img_data, 0)
+    img_shape = np.stack([img_shape])
+    fk_bboxes = np.expand_dims(fk_bboxes, 0)
+    fk_label = np.expand_dims(fk_label, 0)
+    fk_num = np.expand_dims(fk_num, 0)
+
     return {
-        'x': Tensor(image),
-        'image_shape': Tensor(image_size)
+        'img_data': Tensor(img_data),
+        'img_metas': Tensor(img_shape),
+        'gt_bboxes': Tensor(fk_bboxes),
+        'gt_labels': Tensor(fk_label),
+        'gt_valids': Tensor(fk_num)
     }
 
 
@@ -143,18 +198,54 @@ def tobox(boxes, box_scores):
 
 def post_process(iid, prediction):
     print('post_process:', iid)
-    pred_boxes, pred_scores, image_shape = prediction
-    pred_boxes = pred_boxes.asnumpy()[0]
-    pred_scores = pred_scores.asnumpy()[0]
-    pred_boxes[:, [0,1]] = pred_boxes[:, [1,0]]
-    pred_boxes[:, [2,3]] = pred_boxes[:, [3,2]]
-    boxes, classes, scores = tobox(pred_boxes, pred_scores)
+    # for yolov3
+    #  pred_boxes, pred_scores, image_shape = prediction
+    #  pred_boxes = pred_boxes.asnumpy()[0]
+    #  pred_scores = pred_scores.asnumpy()[0]
+    #  pred_boxes[:, [0,1]] = pred_boxes[:, [1,0]]
+    #  pred_boxes[:, [2,3]] = pred_boxes[:, [3,2]]
+    #  boxes, classes, scores = tobox(pred_boxes, pred_scores)
+
+    # for fastrcnn
+    (all_bbox, all_label, all_mask), img_metas = prediction
+
+    max_num = 3
+    all_bbox_squee = np.squeeze(all_bbox.asnumpy()[0, :, :])
+    all_label_squee = np.squeeze(all_label.asnumpy()[0, :, :])
+    all_mask_squee = np.squeeze(all_mask.asnumpy()[0, :, :])
+
+    all_bboxes_tmp_mask = all_bbox_squee[all_mask_squee, :]
+    all_labels_tmp_mask = all_label_squee[all_mask_squee]
+
+    if all_bboxes_tmp_mask.shape[0] > max_num:
+        inds = np.argsort(-all_bboxes_tmp_mask[:, -1])
+        inds = inds[:max_num]
+        all_bboxes_tmp_mask = all_bboxes_tmp_mask[inds]
+        all_labels_tmp_mask = all_labels_tmp_mask[inds]
+
+    # num_classes (int): class number, including background class
+    if all_bboxes_tmp_mask.shape[0] == 0:
+        result = [np.zeros((0, 5), dtype=np.float32) for _ in range(cfg.num_classes - 1)]
+    else:
+        result = [all_bboxes_tmp_mask[all_labels_tmp_mask == i, :] for i in range(cfg.num_classes - 1)]
+
+    print('------------------result-------------')
+    print(result)
+    boxes = []
+    classes = []
+    for i, res in enumerate(result):
+        boxes.append(res[:, :4])
+        clss = np.zeros((res.shape[0], cfg.num_classes), dtype=np.int32)
+        clss[:, i] = 1
+        classes.append(clss)
+    boxes = np.concatenate(boxes)
+    classes = np.concatenate(classes)
+    image_shape = img_metas[0][:2]
 
     # softmax
     #  classes = np_softmax(classes)
 
     h, w = image_shape.asnumpy()
-
     boxes = boxes / np.array([w, h, w, h])
     boxes = boxes.clip(0, 1)
     # pred_classes[:,[0,1,2,3]] = pred_classes[:,[0,1,3,2]]

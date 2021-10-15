@@ -31,7 +31,7 @@ class ConfigFastRCNN:
     """
     img_width = 1280
     img_height = 768
-    num_classes = 4
+    num_classes = 4 + 1  # for background class
 
     keep_ratio = True
     flip_ratio = 0.5
@@ -139,5 +139,6 @@ class ConfigFastRCNN:
     test_score_thr = 0.05
     test_iou_thr = 0.5
     test_max_per_img = 100
-    test_batch_size = 2
+    #  test_batch_size = 2
+    test_batch_size = 1
 
