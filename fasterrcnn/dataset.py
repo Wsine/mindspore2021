@@ -296,6 +296,7 @@ def expand_column(img, img_shape, gt_bboxes, gt_label, gt_num):
 
 
 def preprocess_fn(image, box, file, is_training, config):
+    #  image = image / 255
     """Preprocess function for dataset."""
     def _infer_data(image_bgr, image_shape, gt_box_new, gt_label_new, gt_iscrowd_new_revert):
         image_shape = image_shape[:2]
@@ -330,16 +331,16 @@ def preprocess_fn(image, box, file, is_training, config):
                 gt_box.append(b[:4])
                 gt_label.append(0)
                 gt_iscrowd.append(0)
-                #  gt_box.append(b[:4])
-                #  gt_label.append(3)
-                #  gt_iscrowd.append(0)
+                gt_box.append(b[:4])
+                gt_label.append(3)
+                gt_iscrowd.append(0)
             elif b[5] == 1:
                 gt_box.append(b[:4])
                 gt_label.append(1)
                 gt_iscrowd.append(0)
-                #  gt_box.append(b[:4])
-                #  gt_label.append(3)
-                #  gt_iscrowd.append(0)
+                gt_box.append(b[:4])
+                gt_label.append(3)
+                gt_iscrowd.append(0)
             elif b[6] == 1:
                 gt_box.append(b[:4])
                 gt_label.append(2)
@@ -353,9 +354,12 @@ def preprocess_fn(image, box, file, is_training, config):
         gt_iscrowd = np.asarray(gt_iscrowd)
 
         pad_max_number = 128
-        gt_box_new = np.pad(gt_box, ((0, pad_max_number - box.shape[0]), (0, 0)), mode="constant", constant_values=0)
-        gt_label_new = np.pad(gt_label, ((0, pad_max_number - box.shape[0])), mode="constant", constant_values=-1)
-        gt_iscrowd_new = np.pad(gt_iscrowd, ((0, pad_max_number - box.shape[0])), mode="constant", constant_values=1)
+        #  gt_box_new = np.pad(gt_box, ((0, pad_max_number - box.shape[0]), (0, 0)), mode="constant", constant_values=0)
+        #  gt_label_new = np.pad(gt_label, ((0, pad_max_number - box.shape[0])), mode="constant", constant_values=-1)
+        #  gt_iscrowd_new = np.pad(gt_iscrowd, ((0, pad_max_number - box.shape[0])), mode="constant", constant_values=1)
+        gt_box_new = np.pad(gt_box, ((0, pad_max_number - gt_box.shape[0]), (0, 0)), mode="constant", constant_values=0)
+        gt_label_new = np.pad(gt_label, ((0, pad_max_number - gt_box.shape[0])), mode="constant", constant_values=-1)
+        gt_iscrowd_new = np.pad(gt_iscrowd, ((0, pad_max_number - gt_box.shape[0])), mode="constant", constant_values=1)
         gt_iscrowd_new_revert = (~(gt_iscrowd_new.astype(np.bool))).astype(np.int32)
 
         if not is_training:
