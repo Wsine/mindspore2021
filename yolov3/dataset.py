@@ -83,10 +83,11 @@ def preprocess_fn(image, box, file, is_training):
                         j = np.floor(true_boxes[t, 1] * grid_shapes[l][0]).astype('int32')
                         k = anchor_mask[l].index(n)
 
-                        #c = true_boxes[t, 4].astype('int32')
+                        c = true_boxes[t, 4].astype('int32')
                         y_true[l][j, i, k, 0:4] = true_boxes[t, 0:4]
                         y_true[l][j, i, k, 4] = 1.
-                        y_true[l][j, i, k, 5:5 + num_classes] = true_boxes[t, 4:4 + num_classes]
+                        #  y_true[l][j, i, k, 5:5 + num_classes] = true_boxes[t, 4:4 + num_classes]
+                        y_true[l][j, i, k, 5 + c] = 1.
 
         pad_gt_box0 = np.zeros(shape=[ConfigYOLOV3ResNet18._NUM_BOXES, 4], dtype=np.float32)
         pad_gt_box1 = np.zeros(shape=[ConfigYOLOV3ResNet18._NUM_BOXES, 4], dtype=np.float32)
@@ -146,7 +147,8 @@ def preprocess_fn(image, box, file, is_training):
 
         flip = _rand() < .5
         # correct boxes
-        box_data = np.zeros((max_boxes, 4 + num_classes))
+        #  box_data = np.zeros((max_boxes, 4 + num_classes))
+        box_data = np.zeros((max_boxes, 5))
         flag =0
 
         while True:
@@ -277,7 +279,8 @@ def data_to_mindrecord_byte_image(
 
     yolo_json = {
         "image": {"type": "bytes"},
-        "annotation": {"type": "int32", "shape": [-1, 4 + num_classes]},
+        #  "annotation": {"type": "int32", "shape": [-1, 4 + num_classes]},
+        "annotation": {"type": "int32", "shape": [-1, 5]},
         "file": {"type": "string"},
     }
     writer_train.add_schema(yolo_json, "yolo_json")
@@ -297,7 +300,13 @@ def data_to_mindrecord_byte_image(
         h = image_metadata.height;
         image_anno_dict[image_name][:,[0,2]] *= w
         image_anno_dict[image_name][:,[1,3]] *= h
-        annos = np.array(image_anno_dict[image_name],dtype=np.int32)
+
+        #  annos = np.array(image_anno_dict[image_name],dtype=np.int32)
+        box = image_anno_dict[image_name]
+        gt_box = np.concatenate([box[box[:, i + 4] == np.ones((box.shape[0],)), :4] for i in range(4)])
+        gt_label = np.concatenate([np.ones((box[:, i + 4].astype(np.int32).sum(),), dtype=np.int32) * i for i in range(4)]).reshape((-1, 1))
+        annn = np.concatenate([gt_box, gt_label], axis=1)
+        annos = np.array(annn, dtype=np.int32)
 
         #print(annos.shape)
         row = {"image": img, "annotation": annos, "file": image_name+'.bmp'}

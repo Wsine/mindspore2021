@@ -174,8 +174,8 @@ def tobox(boxes, box_scores):
         #nms_index = apply_nms(class_boxes, class_box_scores, 0.5, max_boxes)
         class_boxes = class_boxes[nms_index]
         class_box_scores = class_box_scores[nms_index]
-        #  classes = np.ones_like(class_box_scores, 'int32') * c
-        classes = box_scores[selected[nms_index]]
+        classes = np.ones_like(class_box_scores, 'int32') * c
+        #  classes = box_scores[selected[nms_index]]
         #  classes = np.zeros((len(nms_index), 4), dtype=np.int32)
         #  if c == 0:
         #      classes[:, [0,3]] = 1
@@ -203,6 +203,9 @@ def post_process(iid, prediction):
     pred_boxes[:, [0,1]] = pred_boxes[:, [1,0]]
     pred_boxes[:, [2,3]] = pred_boxes[:, [3,2]]
     boxes, classes, scores = tobox(pred_boxes, pred_scores)
+    one_hot = np.zeros((classes.size, classes.max()+1))
+    one_hot[np.arange(classes.size), classes] = 1
+    classes = one_hot
 
     # for fastrcnn
     #  (all_bbox, all_label, all_mask), img_metas = prediction
