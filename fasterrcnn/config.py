@@ -44,8 +44,8 @@ class ConfigFastRCNN:
     weight_decay = 0.00001
 
     # LR
-    base_lr = 0.04
-    #  base_lr = 0.001
+    #  base_lr = 0.04
+    base_lr = 0.02
     warmup_step = 500
     warmup_ratio = 0.0625
     sgd_step = [8, 11]
@@ -136,7 +136,8 @@ class ConfigFastRCNN:
     rpn_max_num = 1000
     rpn_nms_thr = 0.7
     rpn_min_bbox_min_size = 0
-    test_score_thr = 0.05
+    #  test_score_thr = 0.05
+    test_score_thr = 0.1
     test_iou_thr = 0.5
     test_max_per_img = 100
     #  test_batch_size = 2

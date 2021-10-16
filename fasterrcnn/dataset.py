@@ -318,48 +318,21 @@ def preprocess_fn(image, box, file, is_training, config):
         image_bgr[:, :, 1] = image[:, :, 1]
         image_bgr[:, :, 2] = image[:, :, 0]
         image_shape = image_bgr.shape[:2]
-        #  gt_box = box[:, :4]
-        #  gt_label = box[:, 4]
-        #  gt_iscrowd = box[:, 5]
+        gt_box = box[:, :4]
+        gt_label = box[:, 4]
+        gt_iscrowd = box[:, 5]
 
-        #  print('box:', box)
-        gt_box = []
-        gt_label = []
-        gt_iscrowd = []
-        for b in box:
-            if b[4] == 1:
-                gt_box.append(b[:4])
-                gt_label.append(0)
-                gt_iscrowd.append(0)
-                gt_box.append(b[:4])
-                gt_label.append(3)
-                gt_iscrowd.append(0)
-            elif b[5] == 1:
-                gt_box.append(b[:4])
-                gt_label.append(1)
-                gt_iscrowd.append(0)
-                gt_box.append(b[:4])
-                gt_label.append(3)
-                gt_iscrowd.append(0)
-            elif b[6] == 1:
-                gt_box.append(b[:4])
-                gt_label.append(2)
-                gt_iscrowd.append(0)
-            elif b[7] == 1:
-                gt_box.append(b[:4])
-                gt_label.append(3)
-                gt_iscrowd.append(0)
-        gt_box = np.stack(gt_box)
-        gt_label = np.asarray(gt_label)
-        gt_iscrowd = np.asarray(gt_iscrowd)
+        #  gt_box = np.concatenate([box[box[:, i + 4] == np.ones((box.shape[0],)), :4] for i in range(config.num_classes)])
+        #  gt_label = np.concatenate([np.ones((box[:, i + 4].sum(),), dtype=np.int32) * (i + 1) for i in range(config.num_classes)])
+        #  gt_iscrowd = np.zeros((gt_box.shape[0],), dtype=np.int32)
 
         pad_max_number = 128
-        #  gt_box_new = np.pad(gt_box, ((0, pad_max_number - box.shape[0]), (0, 0)), mode="constant", constant_values=0)
-        #  gt_label_new = np.pad(gt_label, ((0, pad_max_number - box.shape[0])), mode="constant", constant_values=-1)
-        #  gt_iscrowd_new = np.pad(gt_iscrowd, ((0, pad_max_number - box.shape[0])), mode="constant", constant_values=1)
-        gt_box_new = np.pad(gt_box, ((0, pad_max_number - gt_box.shape[0]), (0, 0)), mode="constant", constant_values=0)
-        gt_label_new = np.pad(gt_label, ((0, pad_max_number - gt_box.shape[0])), mode="constant", constant_values=-1)
-        gt_iscrowd_new = np.pad(gt_iscrowd, ((0, pad_max_number - gt_box.shape[0])), mode="constant", constant_values=1)
+        gt_box_new = np.pad(gt_box, ((0, pad_max_number - box.shape[0]), (0, 0)), mode="constant", constant_values=0)
+        gt_label_new = np.pad(gt_label, ((0, pad_max_number - box.shape[0])), mode="constant", constant_values=-1)
+        gt_iscrowd_new = np.pad(gt_iscrowd, ((0, pad_max_number - box.shape[0])), mode="constant", constant_values=1)
+        #  gt_box_new = np.pad(gt_box, ((0, pad_max_number - gt_box.shape[0]), (0, 0)), mode="constant", constant_values=0)
+        #  gt_label_new = np.pad(gt_label, ((0, pad_max_number - gt_box.shape[0])), mode="constant", constant_values=-1)
+        #  gt_iscrowd_new = np.pad(gt_iscrowd, ((0, pad_max_number - gt_box.shape[0])), mode="constant", constant_values=1)
         gt_iscrowd_new_revert = (~(gt_iscrowd_new.astype(np.bool))).astype(np.int32)
 
         if not is_training:
@@ -410,13 +383,14 @@ def data_to_mindrecord_byte_image(
     writer_test = FileWriter(mindrecord_test_path, file_num)
 
     image_files, image_anno_dict = filter_valid_data(label_file)
-    num_classes = ConfigFastRCNN.num_classes - 1  # remove background class
+    #  num_classes = ConfigFastRCNN.num_classes - 1  # remove background class
 
     metadata_df = pd.read_csv(metadata_file)
 
     yolo_json = {
         "image": {"type": "bytes"},
-        "annotation": {"type": "int32", "shape": [-1, 4 + num_classes]},
+        #  "annotation": {"type": "int32", "shape": [-1, 4 + num_classes]},
+        "annotation": {"type": "int32", "shape": [-1, 6]},
         "file": {"type": "string"},
     }
     writer_train.add_schema(yolo_json, "yolo_json")
@@ -427,16 +401,31 @@ def data_to_mindrecord_byte_image(
     print('number of training groups of images:', split_at)
     print('number of test groups of images:', len(image_files) - split_at)
 
-    for idx, image_name in enumerate(image_files):
+    #  for idx, image_name in enumerate(image_files):
+    for idx, row in metadata_df.iterrows():
+        image_name = row['image_id']
         image_path = os.path.join(image_dir, image_name + '.bmp')
         with open(image_path, 'rb') as f:
             img = f.read()
-        image_metadata = metadata_df[metadata_df.image_id == image_name].iloc[0]
+        #  image_metadata = metadata_df[metadata_df.image_id == image_name].iloc[0]
+        image_metadata = row
         w = image_metadata.width;
         h = image_metadata.height;
-        image_anno_dict[image_name][:,[0,2]] *= w
-        image_anno_dict[image_name][:,[1,3]] *= h
-        annos = np.array(image_anno_dict[image_name],dtype=np.int32)
+        #  image_anno_dict[image_name][:,[0,2]] *= w
+        #  image_anno_dict[image_name][:,[1,3]] *= h
+        #  annos = np.array(image_anno_dict[image_name],dtype=np.int32)
+        if image_metadata.bbox_count > 0:
+            image_anno_dict[image_name][:,[0,2]] *= w
+            image_anno_dict[image_name][:,[1,3]] *= h
+            box = image_anno_dict[image_name]
+            gt_box = np.concatenate([box[box[:, i + 4] == np.ones((box.shape[0],)), :4] for i in range(4)])
+            gt_label = np.concatenate([np.ones((box[:, i + 4].astype(np.int32).sum(),), dtype=np.int32) * (i + 1) for i in range(4)]).reshape((-1, 1))
+            gt_iscrowd = np.zeros((gt_box.shape[0],), dtype=np.int32).reshape((-1, 1))
+            annn = np.concatenate([gt_box, gt_label, gt_iscrowd], axis=1)
+            annos = np.array(annn, dtype=np.int32)
+        else:
+            annos = np.asarray([[0, 0, 0, 0, 0, 1]], dtype=np.int32)
+
 
         #  print('------- annos ----------')
         #  print(annos.shape)

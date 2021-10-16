@@ -40,7 +40,7 @@ def run_eval(opt):
     rename_mapping = {v.lower(): f'p{k}' for k, v in num_class.items()}
     labels_df = labels_df.rename(columns=rename_mapping)
     labels_df['probability_sum'] = labels_df.apply(
-        lambda row: sum([row[f'p{i}']for i in range(len(num_class))]),
+        lambda row: sum([row[f'p{i}'] for i in range(len(num_class))]),
         axis=1
     )
 
@@ -48,7 +48,11 @@ def run_eval(opt):
         'image_id', 'xmin', 'ymin', 'xmax', 'ymax',
         'p0', 'p1', 'p2', 'p3', 'probability_sum'
     ])
+
+    test_start = int(len(meta_df) * 0.95)
     for img_iter, row in meta_df.iterrows():
+        if img_iter < test_start:
+            continue
         image_id = row['image_id']
         image_path = os.path.join('dataset', 'images', row['image_id'] + '.bmp')
         image = np.asarray(Image.open(image_path), dtype=np.uint8).transpose((2, 0, 1))
@@ -90,11 +94,8 @@ def run_eval(opt):
             prediction_df = prediction_df.append(p, ignore_index=True)
         draw_prediction(opt, image_id, result, labels_df, num_class)
 
-        if img_iter > 10:
-            break
-
     prediction_df['probability_sum'] = prediction_df.apply(
-        lambda row: sum([row[f'p{i}']for i in range(len(num_class))]),
+        lambda row: sum([row[f'p{i}'] for i in range(len(num_class))]),
         axis=1
     )
     print(prediction_df)
