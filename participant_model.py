@@ -4,6 +4,7 @@ import cv2
 from PIL import Image
 
 import mindspore as ms
+import mindspore.common.dtype as mstype
 from mindspore import context, Tensor
 from mindspore.train.serialization import export, load_checkpoint, load_param_into_net
 from mindspore.explainer.explanation import Occlusion
@@ -36,6 +37,8 @@ def Net():
     #  eval_net = YoloWithEval(net, cfg)
     eval_net = Faster_Rcnn_Resnet(cfg)
     eval_net.set_train(False)
+    if context.get_context('device_target') == 'Ascend':
+        net.to_float(mstype.float16)
     return eval_net
 
 
@@ -115,10 +118,7 @@ def pre_process(iid, image):
 
     return {
         'img_data': Tensor(img_data),
-        'img_metas': Tensor(img_shape),
-        'gt_bboxes': Tensor(0),
-        'gt_labels': Tensor(0),
-        'gt_valids': Tensor(0)
+        'img_metas': Tensor(img_shape)
     }
 
 
@@ -207,7 +207,7 @@ def post_process(iid, prediction):
     # for fastrcnn
     (all_bbox, all_label, all_mask), img_metas = prediction
 
-    max_num = 128
+    max_num = 48
     all_bbox_squee = np.squeeze(all_bbox.asnumpy()[0, :, :])
     all_label_squee = np.squeeze(all_label.asnumpy()[0, :, :])
     all_mask_squee = np.squeeze(all_mask.asnumpy()[0, :, :])
@@ -233,8 +233,10 @@ def post_process(iid, prediction):
     classes = []
     for i, res in enumerate(result):
         boxes.append(res[:, :4])
-        clss = np.zeros((res.shape[0], cfg.num_classes - 1), dtype=np.int32)
-        clss[:, i] = 1
+        #  clss = np.zeros((res.shape[0], cfg.num_classes - 1), dtype=np.int32)
+        clss = np.zeros((res.shape[0], cfg.num_classes - 1))
+        #  clss[:, i] = 1
+        clss[:, i] = res[:, 4]
         classes.append(clss)
     boxes = np.concatenate(boxes)
     classes = np.concatenate(classes)

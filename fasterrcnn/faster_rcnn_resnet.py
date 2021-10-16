@@ -232,7 +232,8 @@ class Faster_Rcnn_Resnet(nn.Cell):
         self.roi_align_index_tensor = Tensor(np.concatenate(roi_align_index))
         self.roi_align_index_test_tensor = Tensor(np.concatenate(roi_align_index_test))
 
-    def construct(self, img_data, img_metas, gt_bboxes, gt_labels, gt_valids):
+    #  def construct(self, img_data, img_metas, gt_bboxes, gt_labels, gt_valids):
+    def construct(self, img_data, img_metas, gt_bboxes=None, gt_labels=None, gt_valids=None):
         """
         construct the FasterRcnn Network.
 
@@ -261,8 +262,11 @@ class Faster_Rcnn_Resnet(nn.Cell):
         else:
             proposal, proposal_mask = self.proposal_generator_test(cls_score, bbox_pred, self.anchor_list)
 
-        gt_labels = self.cast(gt_labels, mstype.int32)
-        gt_valids = self.cast(gt_valids, mstype.int32)
+        #  gt_labels = self.cast(gt_labels, mstype.int32)
+        #  gt_valids = self.cast(gt_valids, mstype.int32)
+        if gt_labels is not None:
+            gt_labels = self.cast(gt_labels, mstype.int32)
+            gt_valids = self.cast(gt_valids, mstype.int32)
         bboxes_tuple = ()
         deltas_tuple = ()
         labels_tuple = ()
