@@ -34,7 +34,8 @@ cfg = ConfigFastRCNN()
 def Net():
     #  net = yolov3_resnet18(cfg)
     #  eval_net = YoloWithEval(net, cfg)
-    eval_net = Faster_Rcnn_Resnet(cfg).set_train(False)
+    eval_net = Faster_Rcnn_Resnet(cfg)
+    eval_net.set_train(False)
     return eval_net
 
 
@@ -108,19 +109,16 @@ def pre_process(iid, image):
     #  }
 
     image = image.transpose((1, 2 ,0))
-    img_data, img_shape, fk_bboxes, fk_label, fk_num = _infer_data_fastrcnn(image)
+    img_data, img_shape, _, _, _ = _infer_data_fastrcnn(image)
     img_data = np.expand_dims(img_data, 0)
     img_shape = np.stack([img_shape])
-    fk_bboxes = np.expand_dims(fk_bboxes, 0)
-    fk_label = np.expand_dims(fk_label, 0)
-    fk_num = np.expand_dims(fk_num, 0)
 
     return {
         'img_data': Tensor(img_data),
         'img_metas': Tensor(img_shape),
-        'gt_bboxes': Tensor(fk_bboxes),
-        'gt_labels': Tensor(fk_label),
-        'gt_valids': Tensor(fk_num)
+        'gt_bboxes': Tensor(0),
+        'gt_labels': Tensor(0),
+        'gt_valids': Tensor(0)
     }
 
 
@@ -209,7 +207,7 @@ def post_process(iid, prediction):
     # for fastrcnn
     (all_bbox, all_label, all_mask), img_metas = prediction
 
-    max_num = 3
+    max_num = 128
     all_bbox_squee = np.squeeze(all_bbox.asnumpy()[0, :, :])
     all_label_squee = np.squeeze(all_label.asnumpy()[0, :, :])
     all_mask_squee = np.squeeze(all_mask.asnumpy()[0, :, :])
@@ -235,7 +233,7 @@ def post_process(iid, prediction):
     classes = []
     for i, res in enumerate(result):
         boxes.append(res[:, :4])
-        clss = np.zeros((res.shape[0], cfg.num_classes), dtype=np.int32)
+        clss = np.zeros((res.shape[0], cfg.num_classes - 1), dtype=np.int32)
         clss[:, i] = 1
         classes.append(clss)
     boxes = np.concatenate(boxes)
@@ -252,7 +250,7 @@ def post_process(iid, prediction):
     classes = classes.clip(0, 1)
 
     result = np.concatenate([boxes, classes], axis=1)
-    result = result[result[:, [4,5,6,7]].sum(axis=1) > 1e-5]
+    #  result = result[result[:, [4,5,6,7]].sum(axis=1) > 1e-5]
     return np.array(result)
 
 
