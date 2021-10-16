@@ -1,4 +1,5 @@
 import os
+import json
 import argparse
 import numpy as np
 import pandas as pd
@@ -30,6 +31,10 @@ def get_model_net_with_weights(ckpt_file='./model.ckpt'):
     return net
 
 
+val_list = json.load(open('val_split.json'))
+val_list = [x['file_name'].rstrip('.bmp') for x in val_list['images']]
+
+
 def run_eval(opt):
     net = get_model_net_with_weights()
 
@@ -48,12 +53,19 @@ def run_eval(opt):
         'image_id', 'xmin', 'ymin', 'xmax', 'ymax',
         'p0', 'p1', 'p2', 'p3', 'probability_sum'
     ])
+    gt_df = pd.DataFrame(columns=[
+        'image_id', 'xmin', 'ymin', 'xmax', 'ymax',
+        'p0', 'p1', 'p2', 'p3', 'probability_sum'
+    ])
 
     test_start = int(len(meta_df) * 0.95)
     for img_iter, row in meta_df.iterrows():
         if img_iter < test_start:
             continue
+
         image_id = row['image_id']
+        #  if image_id not in val_list:
+        #      continue
         image_path = os.path.join('dataset', 'images', row['image_id'] + '.bmp')
         image = np.asarray(Image.open(image_path), dtype=np.uint8).transpose((2, 0, 1))
         image_shape = (row['height'], row['width'])
@@ -94,13 +106,24 @@ def run_eval(opt):
             prediction_df = prediction_df.append(p, ignore_index=True)
         draw_prediction(opt, image_id, result, labels_df, num_class)
 
+        for _, row in labels_df.loc[labels_df['image_id'] == image_id].iterrows():
+            gt_df = gt_df.append(row, ignore_index=True)
+
+        #  if img_iter > 2:
+        #      break
+
     prediction_df['probability_sum'] = prediction_df.apply(
         lambda row: sum([row[f'p{i}'] for i in range(len(num_class))]),
         axis=1
     )
+    gt_df['probability_sum'] = gt_df.apply(
+        lambda row: sum([row[f'p{i}'] for i in range(len(num_class))]),
+        axis=1
+    )
     print(prediction_df)
+    print(gt_df)
     froc_score = evaluate(
-        prediction_df, labels_df,
+        prediction_df, gt_df,
         fp_sampling=[1/4, 1/2, 1, 2, 4, 8]
     )
     print('froc = {}'.format(froc_score))
