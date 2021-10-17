@@ -4,6 +4,7 @@ import ast
 from easydict import EasyDict as edict
 import shutil
 from pathlib import Path
+import math
 
 import numpy as np
 import mindspore.nn as nn
@@ -22,11 +23,15 @@ from mindspore.nn.dynamic_lr import warmup_lr, exponential_decay_lr
 #  from yolov3.config import ConfigYOLOV3ResNet18
 #  from yolov3.dataset import create_yolo_dataset, data_to_mindrecord_byte_image
 # fastrrcnn
-from fasterrcnn.faster_rcnn_resnet import Faster_Rcnn_Resnet
-from fasterrcnn.config import ConfigFastRCNN
-from fasterrcnn.network_define import LossCallBack, WithLossCell, TrainOneStepCell, LossNet
-from fasterrcnn.lr_schedule import dynamic_lr
-from fasterrcnn.dataset import create_fasterrcnn_dataset, data_to_mindrecord_byte_image
+#  from fasterrcnn.faster_rcnn_resnet import Faster_Rcnn_Resnet
+#  from fasterrcnn.config import ConfigFastRCNN
+#  from fasterrcnn.network_define import LossCallBack, WithLossCell, TrainOneStepCell, LossNet
+#  from fasterrcnn.lr_schedule import dynamic_lr
+#  from fasterrcnn.dataset import create_fasterrcnn_dataset, data_to_mindrecord_byte_image
+# resnet
+from tsstconv.config import ConfigResNet
+from tsstconv.dataset import create_resnet_dataset, data_to_mindrecord_byte_image
+from tsstconv.tsstconv import TSSTLossNet, resnet18, TrainOneStepCell
 
 
 def get_lr(learning_rate, start_step, global_step, decay_step, decay_rate, steps=False):
@@ -40,6 +45,46 @@ def get_lr(learning_rate, start_step, global_step, decay_step, decay_rate, steps
     lr_each_step = np.array(lr_each_step).astype(np.float32)
     lr_each_step = lr_each_step[start_step:]
     return lr_each_step
+
+
+def linear_warmup_lr(current_step, warmup_steps, base_lr, init_lr):
+    lr_inc = (float(base_lr) - float(init_lr)) / float(warmup_steps)
+    lr = float(init_lr) + lr_inc * current_step
+    return lr
+
+def warmup_cosine_annealing_lr(lr, steps_per_epoch, warmup_epochs, max_epoch=120, global_step=0):
+    """
+    generate learning rate array with cosine
+
+    Args:
+       lr(float): base learning rate
+       steps_per_epoch(int): steps size of one epoch
+       warmup_epochs(int): number of warmup epochs
+       max_epoch(int): total epochs of training
+       global_step(int): the current start index of lr array
+    Returns:
+       np.array, learning rate array
+    """
+    base_lr = lr
+    warmup_init_lr = 0
+    total_steps = int(max_epoch * steps_per_epoch)
+    warmup_steps = int(warmup_epochs * steps_per_epoch)
+    decay_steps = total_steps - warmup_steps
+
+    lr_each_step = []
+    for i in range(total_steps):
+        if i < warmup_steps:
+            lr = linear_warmup_lr(i + 1, warmup_steps, base_lr, warmup_init_lr)
+        else:
+            linear_decay = (total_steps - i) / decay_steps
+            cosine_decay = 0.5 * (1 + math.cos(math.pi * 2 * 0.47 * i / decay_steps))
+            decayed = linear_decay * cosine_decay + 0.00001
+            lr = base_lr * decayed
+        lr_each_step.append(lr)
+
+    lr_each_step = np.array(lr_each_step).astype(np.float32)
+    learning_rate = lr_each_step[global_step:]
+    return learning_rate
 
 
 def init_net_param(network, init_value='ones'):
@@ -66,14 +111,21 @@ def run_train(opt):
                                           device_num=device_num)
         init()
 
-    #  loss_scale = float(opt.loss_scale)
+    loss_scale = float(opt.loss_scale)
 
     # When create MindDataset, using the fitst mindrecord file, such as yolo.mindrecord0.
     #  dataset = create_yolo_dataset(opt.mindrecord_file,
     #                                batch_size=opt.batch_size, device_num=device_num, rank=rank)
-    config = ConfigFastRCNN()
-    dataset = create_fasterrcnn_dataset(
-        config, opt.mindrecord_file, batch_size=config.batch_size, device_num=device_num, rank_id=rank)
+
+    #  config = ConfigFastRCNN()
+    #  dataset = create_fasterrcnn_dataset(
+    #      config, opt.mindrecord_file, batch_size=config.batch_size, device_num=device_num, rank_id=rank)
+
+    config = ConfigResNet()
+    dataset = create_resnet_dataset(
+        config, opt.mindrecord_file, batch_size=opt.batch_size, device_num=device_num, rank_id=rank,
+        num_parallel_workers=1)
+
     dataset_size = dataset.get_dataset_size()
     print(f"Dataset Created with num of batches: {dataset_size}")
 
@@ -81,10 +133,26 @@ def run_train(opt):
     #  net = YoloWithLossCell(net, ConfigYOLOV3ResNet18())
     #  init_net_param(net, "XavierUniform")
 
-    net = Faster_Rcnn_Resnet(config).set_train()
-    param_dict = ms.load_checkpoint(opt.backbone_ckpt_file)
-    ms.load_param_into_net(net.backbone, param_dict)
-    loss = LossNet()
+    #  net = Faster_Rcnn_Resnet(config).set_train()
+    #  param_dict = ms.load_checkpoint(opt.backbone_ckpt_file)
+    #  ms.load_param_into_net(net.backbone, param_dict)
+    #  loss = LossNet()
+
+    net = resnet18(class_num=config.num_class, input_size=config.image_size)
+    net.set_train()
+    for _, cell in net.cells_and_names():
+        if isinstance(cell, nn.Conv2d):
+            cell.weight.set_data(initializer("XavierUniform", cell.weight.shape, cell.weight.dtype))
+    lossnet = TSSTLossNet(net)
+
+    #  x = Tensor(np.random.rand(20, 3, 200, 200), dtype=ms.common.dtype.float32)
+    #  print(x.shape)
+    #  y = net(x)
+    #  print(y.shape)
+    #  z1 = Tensor(np.array([1,]))
+    #  z2 = Tensor(np.random.randint(0, 4, (20,)))
+    #  z = loss(x, z1, z2)
+    #  print(z)
 
     #  total_epoch_size = 60
     #  if opt.distribute:
@@ -99,35 +167,40 @@ def run_train(opt):
     #  lr += exponential_decay_lr(config.base_lr, 0.9, total_steps-turning_step, 2, 1)
     #  lr = exponential_decay_lr(opt.lr, 0.99, opt.epoch_size, 2, 1)
     #  lr = Tensor(lr).astype(ms.dtype.float32)
-    lr = dynamic_lr(config, dataset_size)
+    #  lr = dynamic_lr(config, dataset_size)
+
+    warmup_epochs = 2
+    lr = warmup_cosine_annealing_lr(opt.lr, dataset_size, warmup_epochs, opt.epoch_size)
     lr = Tensor(lr, ms.common.dtype.float32)
 
     #  optim = nn.Adam(filter(lambda x: x.requires_grad, net.get_parameters()), lr, loss_scale=loss_scale)
-    #  optim = nn.SGD(
-    #      filter(lambda x: x.requires_grad, net.get_parameters()), lr,
-    #      momentum=0.937, weight_decay=0.0005, loss_scale=loss_scale
-    #  )
-    optim = nn.SGD(params=net.trainable_params(), learning_rate=lr,
-                   momentum=config.momentum, weight_decay=config.weight_decay, loss_scale=config.loss_scale)
+    optim = nn.SGD(
+        filter(lambda x: x.requires_grad, net.get_parameters()), lr,
+        momentum=0.937, weight_decay=0.0005, loss_scale=loss_scale
+    )
+    #  optim = nn.SGD(params=net.trainable_params(), learning_rate=lr,
+    #                 momentum=config.momentum, weight_decay=config.weight_decay, loss_scale=config.loss_scale)
 
     #  net = TrainingWrapper(net, optim, loss_scale)
-    net = WithLossCell(net, loss)
-    net = TrainOneStepCell(net, optim, sens=config.loss_scale)
+    #  net = WithLossCell(net, loss)
+    #  net = TrainOneStepCell(net, optim, sens=config.loss_scale)
+    net = TrainOneStepCell(lossnet, optim, sens=loss_scale)
 
     # checkpoint
     ckpt_config = CheckpointConfig(save_checkpoint_steps=dataset_size * opt.save_checkpoint_epochs,
                                   keep_checkpoint_max=opt.keep_checkpoint_max)
     #  ckpoint_cb = ModelCheckpoint(prefix="yolov3", directory=opt.ckpt_dir, config=ckpt_config)
-    ckpoint_cb = ModelCheckpoint(prefix="fastrcnn", directory=opt.ckpt_dir, config=ckpt_config)
+    #  ckpoint_cb = ModelCheckpoint(prefix="fastrcnn", directory=opt.ckpt_dir, config=ckpt_config)
+    ckpoint_cb = ModelCheckpoint(prefix="tsstconv", directory=opt.ckpt_dir, config=ckpt_config)
     #  callback = [TimeMonitor(data_size=dataset_size), LossMonitor(1*dataset_size), ckpoint_cb]
     callback = [TimeMonitor(data_size=dataset_size), LossMonitor(), ckpoint_cb]
 
     model = Model(net)
-    #  dataset_sink_mode = opt.dataset_sink_mode
+    dataset_sink_mode = opt.dataset_sink_mode
     print("============ Start Training ============")
     print("The first epoch will be slower because of the graph compilation.")
-    #  model.train(opt.epoch_size, dataset, callbacks=callback, dataset_sink_mode=dataset_sink_mode)
-    model.train(config.epoch_size, dataset, callbacks=callback, dataset_sink_mode=False)
+    model.train(opt.epoch_size, dataset, callbacks=callback, dataset_sink_mode=dataset_sink_mode)
+    #  model.train(config.epoch_size, dataset, callbacks=callback, dataset_sink_mode=False)
 
 
 def prepare_dataset(opt):
@@ -186,11 +259,11 @@ if __name__ == '__main__':
     parser.add_argument('--output_url', required=True, default=None, help='Location of training outputs.')
     parser.add_argument('--is_modelarts', type=bool, default=False)
     parser.add_argument('--device_id', type=int, default=0)
-    #  parser.add_argument('--loss_scale', type=int, default=1024)
-    #  parser.add_argument('--batch_size', type=int, default=32)
-    #  parser.add_argument('--epoch_size', type=int, default=50)
-    #  parser.add_argument('--lr', type=float, default=0.001)
-    #  parser.add_argument('--dataset_sink_mode', type=bool, default=True)
+    parser.add_argument('--loss_scale', type=int, default=100)
+    parser.add_argument('--batch_size', type=int, default=1)
+    parser.add_argument('--epoch_size', type=int, default=20)
+    parser.add_argument('--lr', type=float, default=0.001)
+    parser.add_argument('--dataset_sink_mode', type=bool, default=False)
     parser.add_argument('--save_checkpoint_epochs', type=int, default=1)
     parser.add_argument('--keep_checkpoint_max', type=int, default=50)
     parser.add_argument('--distribute', type=bool, default=False)

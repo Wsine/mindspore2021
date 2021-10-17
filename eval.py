@@ -20,11 +20,11 @@ context.set_context(mode=context.PYNATIVE_MODE, device_target="GPU", device_id=0
 def get_model_net_with_weights(ckpt_file='./model.ckpt'):
     net = participant_model.Net()
     param_dict = ms.load_checkpoint(ckpt_file)
-    if context.get_context("device_target") == "GPU":
-        print('cast back to float32')
-        for key, value in param_dict.items():
-            tensor = value.asnumpy().astype(np.float32)
-            param_dict[key] = Parameter(tensor, key)
+    #  if context.get_context("device_target") == "GPU":
+    #      print('cast back to float32')
+    #      for key, value in param_dict.items():
+    #          tensor = value.asnumpy().astype(np.float32)
+    #          param_dict[key] = Parameter(tensor, key)
     ms.load_param_into_net(net, param_dict)
     #  net.set_train(False)  # for yolov3
     return net
@@ -140,7 +140,8 @@ def draw_prediction(opt, image_id, pred, labels_df, num_class):
         ))
         ax.text(
             xmin, ymin,
-            s=f'{num_class[classes[box_index]]}: {scores[box_index]}',
+            #  s=f'{num_class[classes[box_index]]}: {scores[box_index]}',
+            s='',
             style='italic', c='red', bbox={'alpha': 0.5}
         )
 

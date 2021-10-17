@@ -146,7 +146,9 @@ class TrainOneStepCell(nn.Cell):
     def construct(self, x, img_shape, gt_bboxe, gt_label, gt_num):
         weights = self.weights
         loss = self.network(x, img_shape, gt_bboxe, gt_label, gt_num)
+        print(loss, len(loss))
         grads = self.grad(self.network, weights)(x, img_shape, gt_bboxe, gt_label, gt_num, self.sens)
+        print('grads:', len(grads))
         if self.reduce_flag:
             grads = self.grad_reducer(grads)
         return F.depend(loss, self.optimizer(grads))

@@ -6,3 +6,4 @@ download
 draw
 *.ckpt
 froc.png
+val_split.json

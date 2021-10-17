@@ -2,6 +2,7 @@ import os
 import numpy as np
 import cv2
 from PIL import Image
+import slidingwindow as sw
 
 import mindspore as ms
 from mindspore import context, Tensor
@@ -12,9 +13,15 @@ from mindspore.explainer.explanation import Occlusion
 #  from yolov3.yolov3 import yolov3_resnet18, YoloWithEval
 #  from yolov3.config import ConfigYOLOV3ResNet18
 # fastrcnn
-from fasterrcnn.faster_rcnn_resnet import Faster_Rcnn_Resnet
-from fasterrcnn.config import ConfigFastRCNN
-from fasterrcnn.dataset import rescale_column_test, resize_column_test, imnormalize_column, transpose_column
+#  from fasterrcnn.faster_rcnn_resnet import Faster_Rcnn_Resnet
+#  from fasterrcnn.config import ConfigFastRCNN
+#  from fasterrcnn.dataset import rescale_column_test, resize_column_test, imnormalize_column, transpose_column
+# resnet
+from tsstconv.config import ConfigResNet
+from tsstconv.tsstconv import resnet18
+
+
+image_state = {}
 
 
 def np_softmax(z):
@@ -28,13 +35,15 @@ def np_softmax(z):
 
 
 #  cfg = ConfigYOLOV3ResNet18()
-cfg = ConfigFastRCNN()
+#  cfg = ConfigFastRCNN()
+cfg = ConfigResNet()
 
 
 def Net():
     #  net = yolov3_resnet18(cfg)
     #  eval_net = YoloWithEval(net, cfg)
-    eval_net = Faster_Rcnn_Resnet(cfg).set_train(False)
+    #  eval_net = Faster_Rcnn_Resnet(cfg).set_train(False)
+    eval_net = resnet18(cfg.num_class).set_train(False)
     return eval_net
 
 
@@ -93,6 +102,26 @@ def _infer_data_fastrcnn(image):
     return output_data
 
 
+def _infer_data_resnet(iid, image):
+    windows = sw.generate(image, sw.DimOrder.HeightWidthChannel, cfg.image_size, cfg.overlap_percent)
+    patches = np.array([image[win.indices()] for win in windows])
+
+    #  n_total = len(windows)
+    #  _x = 0
+    #  for i, win in enumerate(windows):
+    #      if _x != win.x:
+    #          n_x = i
+    #          break
+    #      _x = win.x
+    h, w = image.shape[:2]
+    image_state[iid] = {
+        'windows': windows,
+        'image_shape': (h, w)
+    }
+
+    return patches
+
+
 def pre_process(iid, image):
     """Data augmentation function."""
     print('pre_process:', iid)
@@ -107,20 +136,28 @@ def pre_process(iid, image):
     #      'image_shape': Tensor(image_size)
     #  }
 
+    #  image = image.transpose((1, 2 ,0))
+    #  img_data, img_shape, fk_bboxes, fk_label, fk_num = _infer_data_fastrcnn(image)
+    #  img_data = np.expand_dims(img_data, 0)
+    #  img_shape = np.stack([img_shape])
+    #  fk_bboxes = np.expand_dims(fk_bboxes, 0)
+    #  fk_label = np.expand_dims(fk_label, 0)
+    #  fk_num = np.expand_dims(fk_num, 0)
+    #
+    #  return {
+    #      'img_data': Tensor(img_data),
+    #      'img_metas': Tensor(img_shape),
+    #      'gt_bboxes': Tensor(fk_bboxes),
+    #      'gt_labels': Tensor(fk_label),
+    #      'gt_valids': Tensor(fk_num)
+    #  }
+
     image = image.transpose((1, 2 ,0))
-    img_data, img_shape, fk_bboxes, fk_label, fk_num = _infer_data_fastrcnn(image)
-    img_data = np.expand_dims(img_data, 0)
-    img_shape = np.stack([img_shape])
-    fk_bboxes = np.expand_dims(fk_bboxes, 0)
-    fk_label = np.expand_dims(fk_label, 0)
-    fk_num = np.expand_dims(fk_num, 0)
+    patches = _infer_data_resnet(iid, image)
+    patches = patches.transpose((0, 3, 1, 2)).astype(np.float32)
 
     return {
-        'img_data': Tensor(img_data),
-        'img_metas': Tensor(img_shape),
-        'gt_bboxes': Tensor(fk_bboxes),
-        'gt_labels': Tensor(fk_label),
-        'gt_valids': Tensor(fk_num)
+        'x': Tensor(patches)
     }
 
 
@@ -207,53 +244,78 @@ def post_process(iid, prediction):
     #  boxes, classes, scores = tobox(pred_boxes, pred_scores)
 
     # for fastrcnn
-    (all_bbox, all_label, all_mask), img_metas = prediction
+    #  (all_bbox, all_label, all_mask), img_metas = prediction
+    #
+    #  max_num = 3
+    #  all_bbox_squee = np.squeeze(all_bbox.asnumpy()[0, :, :])
+    #  all_label_squee = np.squeeze(all_label.asnumpy()[0, :, :])
+    #  all_mask_squee = np.squeeze(all_mask.asnumpy()[0, :, :])
+    #
+    #  all_bboxes_tmp_mask = all_bbox_squee[all_mask_squee, :]
+    #  all_labels_tmp_mask = all_label_squee[all_mask_squee]
+    #
+    #  if all_bboxes_tmp_mask.shape[0] > max_num:
+    #      inds = np.argsort(-all_bboxes_tmp_mask[:, -1])
+    #      inds = inds[:max_num]
+    #      all_bboxes_tmp_mask = all_bboxes_tmp_mask[inds]
+    #      all_labels_tmp_mask = all_labels_tmp_mask[inds]
+    #
+    #  # num_classes (int): class number, including background class
+    #  if all_bboxes_tmp_mask.shape[0] == 0:
+    #      result = [np.zeros((0, 5), dtype=np.float32) for _ in range(cfg.num_classes - 1)]
+    #  else:
+    #      result = [all_bboxes_tmp_mask[all_labels_tmp_mask == i, :] for i in range(cfg.num_classes - 1)]
 
-    max_num = 3
-    all_bbox_squee = np.squeeze(all_bbox.asnumpy()[0, :, :])
-    all_label_squee = np.squeeze(all_label.asnumpy()[0, :, :])
-    all_mask_squee = np.squeeze(all_mask.asnumpy()[0, :, :])
-
-    all_bboxes_tmp_mask = all_bbox_squee[all_mask_squee, :]
-    all_labels_tmp_mask = all_label_squee[all_mask_squee]
-
-    if all_bboxes_tmp_mask.shape[0] > max_num:
-        inds = np.argsort(-all_bboxes_tmp_mask[:, -1])
-        inds = inds[:max_num]
-        all_bboxes_tmp_mask = all_bboxes_tmp_mask[inds]
-        all_labels_tmp_mask = all_labels_tmp_mask[inds]
-
-    # num_classes (int): class number, including background class
-    if all_bboxes_tmp_mask.shape[0] == 0:
-        result = [np.zeros((0, 5), dtype=np.float32) for _ in range(cfg.num_classes - 1)]
-    else:
-        result = [all_bboxes_tmp_mask[all_labels_tmp_mask == i, :] for i in range(cfg.num_classes - 1)]
-
-    print('------------------result-------------')
-    print(result)
-    boxes = []
-    classes = []
-    for i, res in enumerate(result):
-        boxes.append(res[:, :4])
-        clss = np.zeros((res.shape[0], cfg.num_classes), dtype=np.int32)
-        clss[:, i] = 1
-        classes.append(clss)
-    boxes = np.concatenate(boxes)
-    classes = np.concatenate(classes)
-    image_shape = img_metas[0][:2]
+    #  print('------------------result-------------')
+    #  print(result)
+    #  boxes = []
+    #  classes = []
+    #  for i, res in enumerate(result):
+    #      boxes.append(res[:, :4])
+    #      clss = np.zeros((res.shape[0], cfg.num_classes), dtype=np.int32)
+    #      clss[:, i] = 1
+    #      classes.append(clss)
+    #  boxes = np.concatenate(boxes)
+    #  classes = np.concatenate(classes)
+    #  image_shape = img_metas[0][:2]
 
     # softmax
     #  classes = np_softmax(classes)
 
-    h, w = image_shape.asnumpy()
-    boxes = boxes / np.array([w, h, w, h])
-    boxes = boxes.clip(0, 1)
-    # pred_classes[:,[0,1,2,3]] = pred_classes[:,[0,1,3,2]]
-    classes = classes.clip(0, 1)
+    #  h, w = image_shape.asnumpy()
+    #  boxes = boxes / np.array([w, h, w, h])
+    #  boxes = boxes.clip(0, 1)
+    #  # pred_classes[:,[0,1,2,3]] = pred_classes[:,[0,1,3,2]]
+    #  classes = classes.clip(0, 1)
+    #
+    #  result = np.concatenate([boxes, classes], axis=1)
+    #  result = result[result[:, [4,5,6,7]].sum(axis=1) > 1e-5]
+    #  return np.array(result)
 
-    result = np.concatenate([boxes, classes], axis=1)
-    result = result[result[:, [4,5,6,7]].sum(axis=1) > 1e-5]
-    return np.array(result)
+    #  print('------------------result-------------')
+    #  n_total, n_x, h, w = image_state[iid]
+    pred = prediction.asnumpy()
+    h, w = image_state[iid]['image_shape']
+    windows = image_state[iid]['windows']
+
+    ind = pred[:, 0].argsort()[-5:][::-1]
+    print(ind)
+    pred = pred[ind]
+    windows = [ windows[i] for i in ind ]
+
+    results = []
+    for pre, win in zip(pred, windows):
+        prob = pre[0]
+        #  if prob > 0.99995:
+        results.append([
+            win.x / w, win.y / h, (win.x + win.w) / w, (win.y + win.h) / h,
+            prob / 4, prob / 4, prob / 4, prob / 4
+        ])
+    del image_state[iid]
+
+    results = np.asarray(results).clip(0, 1)
+
+    return results
 
 
 #  def saliency_map(
