@@ -60,8 +60,8 @@ def run_eval(opt):
 
     test_start = int(len(meta_df) * 0.95)
     for img_iter, row in meta_df.iterrows():
-        if img_iter < test_start:
-            continue
+        #  if img_iter < test_start:
+        #      continue
 
         image_id = row['image_id']
         #  if image_id not in val_list:

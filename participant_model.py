@@ -2,6 +2,8 @@ import os
 import numpy as np
 import cv2
 from PIL import Image
+import slidingwindow as sw
+import scipy as sp
 
 import mindspore as ms
 import mindspore.common.dtype as mstype
@@ -16,6 +18,85 @@ from mindspore.explainer.explanation import Occlusion
 from fasterrcnn.faster_rcnn_resnet import Faster_Rcnn_Resnet
 from fasterrcnn.config import ConfigFastRCNN
 from fasterrcnn.dataset import rescale_column_test, resize_column_test, imnormalize_column, transpose_column
+from mindspore.explainer.explanation import Occlusion
+from mindspore.explainer.explanation import Gradient
+from mindspore.explainer.explanation import Deconvolution
+from mindspore.explainer.explanation import GuidedBackprop
+
+
+class BambooConvolution(ms.nn.Cell):
+    def __init__(self, input_channels=3):
+        super(BambooConvolution, self).__init__()
+        self.conv2d_1 = ms.nn.Conv2d(input_channels, 16, 3, pad_mode='same')
+        self.conv2d_2 = ms.nn.Conv2d(16, 32, 3, pad_mode='same')
+        self.conv2d_3 = ms.nn.Conv2d(32, 32, 3, pad_mode='same')
+
+        self.dense_1 = ms.nn.Dense(2048, 64)
+        self.dense_2 = ms.nn.Dense(64, 2)
+
+        self.activation = ms.nn.ReLU()
+        self.classifier = ms.nn.Sigmoid()
+        self.pooling = ms.nn.MaxPool2d(2, 2)
+        self.dropout = ms.nn.Dropout(0.9)
+        self.flatten = ms.nn.Flatten()
+        self.add = ms.ops.Add()
+        self.concat = ms.ops.Concat(1)
+
+    def construct(
+        self, x
+    ):
+        x = self.conv2d_1(x)
+        x = self.activation(x)
+        x = self.pooling(x)
+        x = self.dropout(x)
+
+
+        x = self.conv2d_2(x)
+        x = self.activation(x)
+        x = self.pooling(x)
+        x = self.dropout(x)
+
+        """
+        x2 = self.pooling(x2)
+
+        x = self.concat((x, x2))
+        x = self.activation(x)
+        """
+
+        x = self.conv2d_3(x)
+        x = self.activation(x)
+        x = self.pooling(x)
+        x = self.dropout(x)
+        """
+        ms.ops.Print()(
+        ms.ops.Shape()(x)
+        )
+        """
+        x = self.flatten(x)
+
+        x = self.dense_1(x)
+        x = self.activation(x)
+        x = self.dropout(x)
+
+        x = self.dense_2(x)
+
+        return x
+
+
+image_size, slide_size = (64, 0.5)
+state = {}
+
+
+class FusionNet(ms.nn.Cell):
+    def __init__(self, rcnn_net, bamboo_net):
+        super(FusionNet, self).__init__()
+        self.rcnn_net = rcnn_net
+        self.bamboo_net = bamboo_net
+
+    def construct(self, img_data, img_metas, patches):
+        output1 = self.rcnn_net(img_data, img_metas)
+        output2 = self.bamboo_net(patches)
+        return output1, output2
 
 
 def np_softmax(z):
@@ -35,10 +116,12 @@ cfg = ConfigFastRCNN()
 def Net():
     #  net = yolov3_resnet18(cfg)
     #  eval_net = YoloWithEval(net, cfg)
-    eval_net = Faster_Rcnn_Resnet(cfg)
-    eval_net.set_train(False)
+    net1 = Faster_Rcnn_Resnet(cfg)
     if context.get_context('device_target') == 'Ascend':
-        net.to_float(mstype.float16)
+        net1.to_float(mstype.float16)
+    net2 = BambooConvolution()
+    eval_net = FusionNet(net1, net2)
+    eval_net.set_train(False)
     return eval_net
 
 
@@ -111,14 +194,38 @@ def pre_process(iid, image):
     #      'image_shape': Tensor(image_size)
     #  }
 
+    boo_image = image.copy()
+    image_id = iid
+
     image = image.transpose((1, 2 ,0))
     img_data, img_shape, _, _, _ = _infer_data_fastrcnn(image)
     img_data = np.expand_dims(img_data, 0)
     img_shape = np.stack([img_shape])
 
+    boo_image = boo_image.transpose((1, 2 ,0))
+    boo_image = boo_image / 255
+    boo_image = boo_image.astype(np.float32)
+    patches = []
+    windows = sw.generate(boo_image, sw.DimOrder.HeightWidthChannel, image_size, slide_size)
+    for i,window in enumerate(windows):
+        _img = boo_image[window.indices()]
+        patches.append(_img)
+    patches = np.array(patches)
+    #check total images, how many images are tiled at height direction, and width direction
+    n_total = len(windows)
+    _x = 0
+    for i, window in enumerate(windows):
+        if _x != window.x:
+            n_x = i
+            break
+        _x = window.x
+    state[image_id] = (n_total, n_x, boo_image.shape[0], boo_image.shape[1])
+    patches = Tensor(np.transpose(patches, (0,3,1,2)), ms.float32)
+
     return {
         'img_data': Tensor(img_data),
-        'img_metas': Tensor(img_shape)
+        'img_metas': Tensor(img_shape),
+        'patches': patches
     }
 
 
@@ -204,8 +311,10 @@ def post_process(iid, prediction):
     #  pred_boxes[:, [2,3]] = pred_boxes[:, [3,2]]
     #  boxes, classes, scores = tobox(pred_boxes, pred_scores)
 
+    output1, output2 = prediction
+
     # for fastrcnn
-    (all_bbox, all_label, all_mask), img_metas = prediction
+    (all_bbox, all_label, all_mask), img_metas = output1
 
     max_num = 48
     all_bbox_squee = np.squeeze(all_bbox.asnumpy()[0, :, :])
@@ -225,10 +334,16 @@ def post_process(iid, prediction):
     if all_bboxes_tmp_mask.shape[0] == 0:
         result = [np.zeros((0, 5), dtype=np.float32) for _ in range(cfg.num_classes - 1)]
     else:
-        result = [all_bboxes_tmp_mask[all_labels_tmp_mask == i, :] for i in range(cfg.num_classes - 1)]
-
+        #  result = [all_bboxes_tmp_mask[all_labels_tmp_mask == i, :] for i in range(cfg.num_classes - 1)]
+        result = []
+        for i in range(cfg.num_classes - 1):
+            if i < 2:
+                result.append(np.zeros((0, 5), dtype=np.float32))
+            else:
+                result.append(all_bboxes_tmp_mask[all_labels_tmp_mask == i, :])
     print('------------------result-------------')
-    print(result)
+    #  print(result)
+
     boxes = []
     classes = []
     for i, res in enumerate(result):
@@ -238,6 +353,7 @@ def post_process(iid, prediction):
         #  clss[:, i] = 1
         clss[:, i] = res[:, 4]
         classes.append(clss)
+
     boxes = np.concatenate(boxes)
     classes = np.concatenate(classes)
     image_shape = img_metas[0][:2]
@@ -251,29 +367,63 @@ def post_process(iid, prediction):
     # pred_classes[:,[0,1,2,3]] = pred_classes[:,[0,1,3,2]]
     classes = classes.clip(0, 1)
 
-    result = np.concatenate([boxes, classes], axis=1)
+    result1 = np.concatenate([boxes, classes], axis=1)
     #  result = result[result[:, [4,5,6,7]].sum(axis=1) > 1e-5]
+
+
+    image_id = iid
+    n_total, n_x, h, w = state[image_id]
+    output2 = output2.asnumpy()
+    output2 = sp.special.softmax(output2, axis=1)
+    output2 = np.reshape(output2[:, 1],(n_total // n_x, n_x))
+
+    result2 = []
+    for j, row_probability in enumerate(output2):
+        for i, cell_probability in enumerate(row_probability):
+            if cell_probability > 0.4:
+                result2.append([
+                    j * (image_size * slide_size) / w,
+                    i * (image_size * slide_size) / h,
+                    (j+1) * (image_size * slide_size) / w,
+                    (i+1) * (image_size * slide_size) / h,
+                    cell_probability,
+                    cell_probability,
+                    0,
+                    0
+                ])
+    result2 = np.array(result2) if len(result2) > 0 else np.zeros((0, 8))
+
+    result = np.concatenate([result1, result2])
     return np.array(result)
 
 
-#  def saliency_map(
-#      net,
-#      image_id,
-#      image,
-#      prediction
-#  ):
-#
-#      context.set_context(mode=context.PYNATIVE_MODE)
-#      temp_prep = pre_process(image_id, image)
-#      temp_prep2 = {
-#          'x': ms.Tensor([temp_prep['x']]),
-#          'image_shape': ms.Tensor([temp_prep['image_shape']]),
-#      }
-#
-#      # target = ms.Tensor(np.ones(pre_processed_data.shape[0]), ms.int32)
-#
-#      occ = Occlusion(net, activation_fn=ms.nn.Softmax())
-#      saliency = occ(temp_prep2, 1)
-#
-#      return saliency.asnumpy()[0][0]
 
+#  def saliency_map(net, image_id, image, prediction):
+#      context.set_context(mode=context.PYNATIVE_MODE)
+#      image = image.transpose((1, 2, 0))
+#      image = image / 255
+#      image = image.astype(np.float32)
+#
+#      # saliency_op = Occlusion(net, activation_fn=ms.nn.Softmax()) # score=0.7776
+#      # saliency_op3 = Gradient(net) # score=0.8451
+#      saliency_op2 = GuidedBackprop(net.bamboo_net) # score=0.8704
+#      saliency_op1 = Deconvolution(net.bamboo_net) # score=0.8858
+#
+#      def process(data, batch):
+#
+#          transformed  = [window.apply(data) for window in batch]  # (1, 64, 64, 3)
+#
+#          img = np.array(transformed).transpose((0, 3, 1, 2))  # (1, 3, 64, 64)
+#
+#          img_tensor = ms.Tensor(img, ms.float32)
+#
+#          saliency1 = saliency_op1(img_tensor, 1) # (1, 1, 64, 64)
+#          saliency2 = saliency_op2(img_tensor, 1) # (1, 1, 64, 64)
+#          # saliency3 = saliency_op3(img_tensor, 1) # (1, 1, 64, 64)
+#
+#          return (saliency1.asnumpy()[0][0] + saliency2.asnumpy()[0][0]) / 2  # (64, 64)
+#
+#      result = sw.mergeWindows(image, sw.DimOrder.HeightWidthChannel, image_size, slide_size, 1, process)
+#
+#      return np.sum(result, axis=2) / 64
+#
