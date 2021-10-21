@@ -334,13 +334,13 @@ def post_process(iid, prediction):
     if all_bboxes_tmp_mask.shape[0] == 0:
         result = [np.zeros((0, 5), dtype=np.float32) for _ in range(cfg.num_classes - 1)]
     else:
-        #  result = [all_bboxes_tmp_mask[all_labels_tmp_mask == i, :] for i in range(cfg.num_classes - 1)]
-        result = []
-        for i in range(cfg.num_classes - 1):
-            if i < 2:
-                result.append(np.zeros((0, 5), dtype=np.float32))
-            else:
-                result.append(all_bboxes_tmp_mask[all_labels_tmp_mask == i, :])
+        result = [all_bboxes_tmp_mask[all_labels_tmp_mask == i, :] for i in range(cfg.num_classes - 1)]
+        #  result = []
+        #  for i in range(cfg.num_classes - 1):
+        #      if i < 2:
+        #          result.append(np.zeros((0, 5), dtype=np.float32))
+        #      else:
+        #          result.append(all_bboxes_tmp_mask[all_labels_tmp_mask == i, :])
     print('------------------result-------------')
     #  print(result)
 
@@ -388,8 +388,8 @@ def post_process(iid, prediction):
                     (i+1) * (image_size * slide_size) / h,
                     cell_probability,
                     cell_probability,
-                    0,
-                    0
+                    cell_probability,
+                    cell_probability
                 ])
     result2 = np.array(result2) if len(result2) > 0 else np.zeros((0, 8))
 
